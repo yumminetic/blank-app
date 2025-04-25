@@ -20,7 +20,7 @@ DEFAULT_FRED_SERIES_NAME = "Effective Federal Funds Rate (Daily)" # Define defau
 # Try to get the FRED API key from Streamlit secrets
 # Create a file .streamlit/secrets.toml and add: FRED_API_KEY = "YOUR_API_KEY_HERE"
 try:
-    FRED_API_KEY = secrets.FRED_API_KEY
+    FRED_API_KEY = st.secrets["FRED_API_KEY"]
 except (KeyError, FileNotFoundError): # Handle missing file/key
     FRED_API_KEY = None # Set to None if not found
 
@@ -47,6 +47,7 @@ else:
 def calculate_rolling_correlation(ticker1, ticker2, window=ROLLING_WINDOW, years=YEARS_OF_DATA):
     """Calculates rolling correlation (uses yfinance)."""
     print(f"Executing: calculate_rolling_correlation for {ticker1} vs {ticker2}...")
+    # ... (Keep the robust implementation from previous version) ...
     end_date = datetime.now(); start_date = end_date - timedelta(days=years*365 + window + 50)
     try:
         data = yf.download([ticker1, ticker2], start=start_date, end=end_date, progress=False)
@@ -110,7 +111,6 @@ def get_fred_series_info(_fred_instance, series_id):
     if not _fred_instance: return None, "FRED API client not initialized."
     if not series_id: return None, "FRED Series ID is empty."
     try:
-        # This should return a Pandas Series
         info = _fred_instance.get_series_info(series_id)
         return info, None
     except Exception as e: error_msg = f"Failed to fetch info for FRED series '{series_id}': {e}"; print(error_msg); return None, error_msg
@@ -146,18 +146,12 @@ def create_iv_skew_plot(calls_df, puts_df, ticker, expiry_date, current_price):
     if not data_plotted: error_message = f"No valid options IV data found for {ticker} expiring {expiry_date}."; fig.add_annotation(text=error_message, showarrow=False, align='center'); fig.update_layout(yaxis_range=[0, 100])
     return fig
 
-# --- THIS IS THE CORRECTED FUNCTION ---
 def create_fred_plot(series_data, series_id, series_info):
     """Creates the Plotly figure for a FRED time series."""
     fig = go.Figure()
     plot_title = f"FRED Series: {series_id}"
     y_axis_label = "Value"
-
-    # --- CORRECTED CHECK for series_info ---
-    # Check if series_info (which is a Pandas Series) is not None AND not empty
-    if series_info is not None and not series_info.empty:
-    # --- END CORRECTION ---
-        # Access elements using .get() for safety as it's a Series behaving like a dict
+    if series_info is not None: # Safely access info if available
         plot_title = series_info.get('title', plot_title)
         y_axis_label = f"{series_info.get('units_short', 'Value')} ({series_info.get('frequency_short', '')}, {series_info.get('seasonal_adjustment_short', 'NSA')})"
 
@@ -165,9 +159,7 @@ def create_fred_plot(series_data, series_id, series_info):
         fig.add_trace(go.Scatter(x=series_data.index, y=series_data.values, mode='lines', name=series_id))
         fig.update_layout(title=plot_title, xaxis_title='Date', yaxis_title=y_axis_label, height=500)
         # Display metadata below the plot using st.caption
-        # --- CORRECTED CHECK for series_info (for caption) ---
-        if series_info is not None and not series_info.empty:
-        # --- END CORRECTION ---
+        if series_info:
              st.caption(f"Last Updated: {series_info.get('last_updated', 'N/A')}. Notes: {series_info.get('notes', 'N/A')}")
     else: # Handles series_data is None or empty
         error_message = f"Could not load data for FRED series '{series_id}'."
@@ -178,7 +170,6 @@ def create_fred_plot(series_data, series_id, series_info):
 
 # --- Ticker Examples Data ---
 ticker_examples = {
-    # ... (ticker examples dictionary) ...
     "Equity Indices": { "S&P 500 (US)": "^GSPC", "Nasdaq Composite (US)": "^IXIC", "Dow Jones Industrial Avg (US)": "^DJI", "FTSE 100 (UK)": "^FTSE", "DAX (Germany)": "^GDAXI", "Nikkei 225 (Japan)": "^N225", "Straits Times Index (SG)": "^STI", },
     "Forex (vs USD)": { "Euro": "EURUSD=X", "British Pound": "GBPUSD=X", "Japanese Yen (USD/JPY)": "JPY=X", "Australian Dollar": "AUDUSD=X", "Singapore Dollar (USD/SGD)": "SGD=X", "Canadian Dollar (USD/CAD)": "CAD=X", },
     "Commodities": { "Gold Futures": "GC=F", "Crude Oil Futures (WTI)": "CL=F", "Silver Futures": "SI=F", "Copper Futures": "HG=F", "Natural Gas Futures": "NG=F", "SPDR Gold Shares ETF": "GLD", "US Oil Fund ETF": "USO", },
@@ -253,10 +244,12 @@ else:
 # --- Section 2: Implied Volatility Skew ---
 st.divider(); st.header("Implied Volatility Skew Viewer")
 # Inputs for Skew (Using safe block for ticker input)
+# --- Start Safe Block for Skew Ticker Input ---
 default_val_skew = st.session_state.get('ticker_calculated_skew', DEFAULT_TICKER_SKEW)
 ticker_skew_input_widget_val = st.text_input("Equity/ETF Ticker:", value=default_val_skew, key="ticker_skew_widget")
 if isinstance(ticker_skew_input_widget_val, str): ticker_skew_input = ticker_skew_input_widget_val.strip().upper()
 else: print(f"WARNING: Unexpected type from text_input: {type(ticker_skew_input_widget_val)}. Using default."); ticker_skew_input = DEFAULT_TICKER_SKEW
+# --- End Safe Block ---
 expirations, error_msg = get_expiration_dates(ticker_skew_input); expiry_input = None
 if expirations:
     try:
@@ -292,23 +285,26 @@ if fred is None: # Check if FRED client failed to initialize
      with plot_placeholder_fred.container():
          st.error(fred_error_message or "FRED API client could not be initialized. Check API key.")
 else:
-    # Inputs for FRED - Use Selectbox with safe index calculation
+    # Inputs for FRED - Use Selectbox
     # --- Start Safe Block for FRED Selectbox Index ---
     value_to_find_fred = st.session_state.get('fred_series_name_calculated', DEFAULT_FRED_SERIES_NAME)
     # print(f"DEBUG: Trying to find index for FRED series: '{value_to_find_fred}'") # Optional Debug
     # print(f"DEBUG: FRED Options available: {fred_series_options}") # Optional Debug
     try:
+        # Check if the value actually exists in the options list
         if value_to_find_fred in fred_series_options:
              current_fred_index = fred_series_options.index(value_to_find_fred)
         else:
              print(f"Warning: Stored/Default FRED series name '{value_to_find_fred}' not in options list. Using default.")
              current_fred_index = fred_series_options.index(DEFAULT_FRED_SERIES_NAME) # Fallback to default index
     except ValueError:
+        # Fallback if even the default isn't found (shouldn't happen if defined correctly)
         print(f"ERROR: Default FRED series name '{DEFAULT_FRED_SERIES_NAME}' not found in options. Using index 0.")
-        current_fred_index = 0 # Fallback if default is somehow wrong
+        current_fred_index = 0
     except Exception as e:
+        # Catch any other unexpected error during index finding
         print(f"ERROR: Unexpected error finding FRED index: {e}")
-        current_fred_index = 0 # Fallback on other errors
+        current_fred_index = 0
     # --- End Safe Block ---
 
     selected_series_name = st.selectbox(
@@ -343,13 +339,9 @@ else:
     # Display FRED Plot based on state
     if st.session_state.get('fred_series_id_calculated'):
         with plot_placeholder_fred.container():
-             fig_fred = create_fred_plot(
-                 st.session_state.fred_data,
-                 st.session_state.fred_series_id_calculated,
-                 st.session_state.fred_series_info # Pass potentially None info
-             )
+             fig_fred = create_fred_plot(st.session_state.fred_data, st.session_state.fred_series_id_calculated, st.session_state.fred_series_info)
              st.plotly_chart(fig_fred, use_container_width=True)
-             # Caption is now inside create_fred_plot
+             # Caption moved inside create_fred_plot
     else:
         # Initial message if FRED section hasn't been used yet
         with plot_placeholder_fred.container():

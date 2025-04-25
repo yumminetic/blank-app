@@ -15,7 +15,7 @@ ROLLING_WINDOW = 30
 YEARS_OF_DATA = 10 # For correlation
 DEFAULT_FRED_SERIES_NAME = "Effective Federal Funds Rate (Daily)" # Define default FRED series name
 # --- Define duration for Fed Jaws chart ---
-FED_JAWS_DURATION_DAYS = 90 # Approx 3 months
+FED_JAWS_DURATION_DAYS = 120 # Approx 3 months
 
 
 # --- FRED API Key Configuration ---
@@ -216,6 +216,8 @@ def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date
     Fetches data for multiple FRED series IDs and merges them.
     If start_date and end_date are provided, fetches data within that range.
     Otherwise, fetches all available historical data for each series.
+    Applies forward fill to the combined data to handle missing values,
+    especially for rates that don't update daily (like target rates).
     """
     if not _fred_instance:
         return None, "FRED API client is not initialized."
@@ -242,14 +244,14 @@ def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date
             else:
                  s_data = _fred_instance.get_series(series_id) # Fetch all data
 
-            s_data = s_data.dropna() # Drop NaNs
-            if not s_data.empty:
+            # Don't drop NaNs here yet, let ffill handle them after merge
+            # s_data = s_data.dropna()
+            if not s_data.empty: # Check if series itself is empty
                 all_series_data[series_id] = s_data
                 successful_ids.append(series_id)
                 print(f"Successfully fetched {series_id}, shape: {s_data.shape}")
             else:
-                print(f"Warning: No data returned for {series_id} in the specified range/period after dropping NaNs.")
-                # Don't necessarily mark as error, could be no data in range
+                print(f"Warning: No data returned for {series_id} in the specified range/period.")
                 # errors[series_id] = "No data found or returned empty."
         except Exception as e:
             error_msg = f"Failed to fetch {series_id}: {e}"
@@ -265,9 +267,17 @@ def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date
     # Use outer join to keep all dates
     try:
         combined_df = pd.concat(all_series_data, axis=1, join='outer')
-        # Consider if filling is appropriate for these specific rates
-        # combined_df.ffill(inplace=True) # Forward fill
-        print(f"Combined FRED data shape: {combined_df.shape}")
+
+        # --- FIX: Apply forward fill to handle gaps ---
+        # This carries the last known value forward for series like target rates
+        combined_df.ffill(inplace=True)
+        print("Applied forward fill (ffill) to combined FRED data.")
+        # --- END FIX ---
+
+        # Optional: Drop rows where ALL values are still NaN after ffill (e.g., at the very beginning)
+        combined_df.dropna(how='all', inplace=True)
+
+        print(f"Combined FRED data shape after ffill: {combined_df.shape}")
 
         # Report any errors for series that failed but where others succeeded
         if errors:
@@ -276,9 +286,9 @@ def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date
         return combined_df, None # Return combined data and no error (even if some series failed)
 
     except Exception as e:
-        print(f"Error combining FRED series: {e}")
+        print(f"Error combining or filling FRED series: {e}")
         print(traceback.format_exc())
-        return None, f"Error occurred while combining FRED data: {e}"
+        return None, f"Error occurred while combining or filling FRED data: {e}"
 
 
 # --- Plotting Functions ---
@@ -487,9 +497,12 @@ def create_fed_jaws_plot(jaws_data):
     }
 
     # Plot each series present in the DataFrame
-    for series_id in jaws_data.columns:
+    # Make sure to iterate through the defined order if desired, or just columns
+    plot_order = FED_JAWS_SERIES_IDS # Use the defined order for plotting layers
+
+    for series_id in plot_order:
         # Check if the column actually exists before plotting (robustness)
-        if series_id in jaws_data:
+        if series_id in jaws_data.columns:
             line_style = None # Default line style
             # Get user-friendly name, fallback to series_id if not defined
             series_name = series_names.get(series_id, series_id)
@@ -693,6 +706,7 @@ else:
 
 
 # --- Section 2: Implied Volatility Skew ---
+# (Keep existing code for Section 2 - Error fix applied previously)
 st.divider()
 st.header("📉 Implied Volatility Skew Viewer")
 st.write("Visualizes the Implied Volatility (IV) smile/skew for options of a selected equity or ETF.")
@@ -714,11 +728,9 @@ if expirations:
         if not future_dates.empty:
             # Find date closest to 90 days from now
             target_date = today + pd.Timedelta(days=90)
-            # --- FIX 2: Use NumPy directly on the TimedeltaIndex values ---
             time_deltas = future_dates - target_date # This results in a TimedeltaIndex
             # Use np.argmin on the absolute values of the underlying NumPy array
             closest_date_pos_in_future = np.abs(time_deltas.values).argmin()
-            # --- END FIX 2 ---
             closest_date_ts = future_dates[closest_date_pos_in_future] # Get the actual Timestamp
             default_expiry_str = closest_date_ts.strftime('%Y-%m-%d') # Format as string
             # Find the index of this string in the original list

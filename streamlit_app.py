@@ -151,7 +151,12 @@ def create_fred_plot(series_data, series_id, series_info):
     fig = go.Figure()
     plot_title = f"FRED Series: {series_id}"
     y_axis_label = "Value"
-    if series_info is not None: # Safely access info if available
+
+    # --- CORRECTED CHECK for series_info ---
+    # Check if series_info (which is a Pandas Series) is not None AND not empty
+    if series_info is not None and not series_info.empty:
+    # --- END CORRECTION ---
+        # Access elements using .get() for safety as it's a Series behaving like a dict
         plot_title = series_info.get('title', plot_title)
         y_axis_label = f"{series_info.get('units_short', 'Value')} ({series_info.get('frequency_short', '')}, {series_info.get('seasonal_adjustment_short', 'NSA')})"
 
@@ -159,7 +164,12 @@ def create_fred_plot(series_data, series_id, series_info):
         fig.add_trace(go.Scatter(x=series_data.index, y=series_data.values, mode='lines', name=series_id))
         fig.update_layout(title=plot_title, xaxis_title='Date', yaxis_title=y_axis_label, height=500)
         # Display metadata below the plot using st.caption
-        if series_info:
+        # --- CORRECTED CHECK for series_info (for caption) ---
+        if series_info is not None and not series_info.empty:
+        # --- END CORRECTION ---
+             # Check if the caption should be associated with the plot or outside
+             # Placing it here associates it closely if data exists.
+             # If you want it outside regardless, move st.caption outside this if block
              st.caption(f"Last Updated: {series_info.get('last_updated', 'N/A')}. Notes: {series_info.get('notes', 'N/A')}")
     else: # Handles series_data is None or empty
         error_message = f"Could not load data for FRED series '{series_id}'."

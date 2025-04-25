@@ -20,7 +20,7 @@ DEFAULT_FRED_SERIES_NAME = "Effective Federal Funds Rate (Daily)" # Define defau
 # Try to get the FRED API key from Streamlit secrets
 # Create a file .streamlit/secrets.toml and add: FRED_API_KEY = "YOUR_API_KEY_HERE"
 try:
-    FRED_API_KEY = st.secrets["FRED_API_KEY"]
+    FRED_API_KEY = secrets.FRED_API_KEY
 except (KeyError, FileNotFoundError): # Handle missing file/key
     FRED_API_KEY = None # Set to None if not found
 

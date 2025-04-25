@@ -148,7 +148,7 @@ ticker_examples = {
 
 # --- Streamlit App Layout ---
 st.set_page_config(page_title="Rolling Correlation", layout="wide")
-st.title("Rolling Correlation Calculator")
+st.title("Macro Dashboard")
 
 # Initialize Session State
 if 'rolling_corr_data' not in st.session_state:

@@ -15,7 +15,7 @@ ROLLING_WINDOW = 30
 YEARS_OF_DATA = 10 # For correlation
 DEFAULT_FRED_SERIES_NAME = "Effective Federal Funds Rate (Daily)" # Define default FRED series name
 # --- Define duration for Fed Jaws chart ---
-FED_JAWS_DURATION_DAYS = 360 # Approx 3 months
+FED_JAWS_DURATION_DAYS = 90 # Approx 3 months
 
 
 # --- FRED API Key Configuration ---

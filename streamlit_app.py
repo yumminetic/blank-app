@@ -10,8 +10,6 @@ from datetime import datetime, timedelta
 import traceback # For detailed error printing if needed directly in UI logic
 
 # Import from custom modules
-# These files (config.py, data_fetchers.py, plotters.py, utils.py)
-# must be in the same directory as streamlit_app.py
 import config
 import data_fetchers
 import plotters
@@ -55,7 +53,7 @@ utils.init_state('fed_jaws_error', None)
 utils.init_state('fed_jaws_calculated', False)
 
 # Fed Funds vs Core PCE State
-utils.init_state('ffr_pce_data', None)
+utils.init_state('ffr_pce_data', None) 
 utils.init_state('ffr_pce_error', None)
 utils.init_state('ffr_pce_calculated', False)
 utils.init_state('current_ffr_pce_diff', None)
@@ -344,96 +342,92 @@ else:
 # --- Section 5: Fed Funds Rate vs Core PCE ---
 st.divider()
 st.header("💰 Fed Funds Rate vs. Core PCE Inflation")
-st.write(f"Visualizes the monthly Effective Federal Funds Rate against monthly Core PCE year-over-year inflation. The gap between the two series is colored red if FFR - Core PCE > {config.FFR_PCE_THRESHOLD}%, potentially indicating heightened recession risk.")
+st.write(f"Visualizes the monthly Effective Federal Funds Rate against monthly Core PCE year-over-year inflation (calculated from PCEPILFE index). The gap between the two series is colored red if FFR - Core PCE YoY > {config.FFR_PCE_THRESHOLD}%, potentially indicating heightened recession risk.")
 
 plot_placeholder_ffr_pce = st.empty()
-current_diff_placeholder_ffr_pce = st.empty() # Placeholder for the metric
+current_diff_placeholder_ffr_pce = st.empty() 
 
 if config.fred is None:
-    with plot_placeholder_ffr_pce.container(): # Use the placeholder for error message too
+    with plot_placeholder_ffr_pce.container(): 
         st.error(config.fred_error_message or "FRED API client is not initialized. Cannot display this chart.")
 else:
     fetch_ffr_pce_button = st.button("Fetch/Refresh Fed Funds vs Core PCE Data", key="ffr_pce_button", type="primary")
 
     if fetch_ffr_pce_button:
-        st.session_state.ffr_pce_data = None # Reset previous data
-        st.session_state.ffr_pce_error = None # Reset previous error
-        st.session_state.ffr_pce_calculated = True # Mark that calculation was attempted
-        st.session_state.current_ffr_pce_diff = None # Reset current difference
+        st.session_state.ffr_pce_data = None 
+        st.session_state.ffr_pce_error = None 
+        st.session_state.ffr_pce_calculated = True 
+        st.session_state.current_ffr_pce_diff = None 
 
-        series_to_fetch_ffr_pce = [config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_yoy"]]
-        with st.spinner("Fetching Fed Funds Rate and Core PCE data from FRED..."):
+        series_to_fetch_ffr_pce = [
+            config.FFR_VS_PCE_SERIES_IDS["ffr"], 
+            config.FFR_VS_PCE_SERIES_IDS["core_pce_index"] 
+        ]
+        with st.spinner("Fetching Fed Funds Rate and Core PCE Index data from FRED..."):
             ffr_pce_data_result, error_msg_ffr_pce = data_fetchers.get_multiple_fred_data(
                 _fred_instance=config.fred,
                 series_ids=series_to_fetch_ffr_pce
-                # No start/end date to get all available history
             )
-            st.session_state.ffr_pce_data = ffr_pce_data_result
+            st.session_state.ffr_pce_data = ffr_pce_data_result 
             st.session_state.ffr_pce_error = error_msg_ffr_pce
 
             if error_msg_ffr_pce:
-                # Display error/warning in the plot placeholder
                 if ffr_pce_data_result is not None and not ffr_pce_data_result.empty:
                     plot_placeholder_ffr_pce.warning(f"FFR vs PCE Data Warning: {error_msg_ffr_pce}")
-                else: # Total failure to fetch data
+                else: 
                     plot_placeholder_ffr_pce.error(f"FFR vs PCE Data Error: {error_msg_ffr_pce}")
             
-            # Calculate current difference if data was successfully fetched (or partially fetched)
             if ffr_pce_data_result is not None and not ffr_pce_data_result.empty:
                 temp_df_ffr_pce = ffr_pce_data_result.copy()
                 ffr_col_name = config.FFR_VS_PCE_SERIES_IDS["ffr"]
-                pce_col_name = config.FFR_VS_PCE_SERIES_IDS["core_pce_yoy"]
+                pce_index_col_name = config.FFR_VS_PCE_SERIES_IDS["core_pce_index"]
                 
-                # Ensure both columns exist in the dataframe after fetching
-                if ffr_col_name in temp_df_ffr_pce.columns and pce_col_name in temp_df_ffr_pce.columns:
-                    # Drop rows where EITHER FFR or PCE is NaN for accurate latest difference
-                    temp_df_ffr_pce.dropna(subset=[ffr_col_name, pce_col_name], inplace=True)
+                if ffr_col_name in temp_df_ffr_pce.columns and pce_index_col_name in temp_df_ffr_pce.columns:
+                    temp_df_ffr_pce.sort_index(inplace=True) 
+                    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' # Define temp name
+                    temp_df_ffr_pce[pce_yoy_calculated_col_name] = temp_df_ffr_pce[pce_index_col_name].pct_change(periods=12) * 100
+                    
+                    temp_df_ffr_pce.dropna(subset=[ffr_col_name, pce_yoy_calculated_col_name], inplace=True)
+                    
                     if not temp_df_ffr_pce.empty:
                         latest_ffr_val = temp_df_ffr_pce[ffr_col_name].iloc[-1]
-                        latest_pce_val = temp_df_ffr_pce[pce_col_name].iloc[-1]
-                        st.session_state.current_ffr_pce_diff = latest_ffr_val - latest_pce_val
+                        latest_pce_yoy_val = temp_df_ffr_pce[pce_yoy_calculated_col_name].iloc[-1]
+                        st.session_state.current_ffr_pce_diff = latest_ffr_val - latest_pce_yoy_val
                     else:
-                        st.session_state.current_ffr_pce_diff = "N/A (No overlapping data)"
+                        st.session_state.current_ffr_pce_diff = "N/A (No overlapping data after YoY calc)"
                 else:
-                    # This case means one or both series IDs were not found in the fetched data
                     missing_cols_str = []
                     if ffr_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(ffr_col_name)
-                    if pce_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(pce_col_name)
-                    st.session_state.current_ffr_pce_diff = f"N/A (Missing: {', '.join(missing_cols_str)})"
-            elif not error_msg_ffr_pce: # No data and no error means series were empty from FRED
-                 st.session_state.current_ffr_pce_diff = "N/A (Data series empty)"
+                    if pce_index_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(pce_index_col_name) # This should be PCEPILFE
+                    st.session_state.current_ffr_pce_diff = f"N/A (Missing source columns: {', '.join(missing_cols_str)})" # Error should show PCEPILFE if it's missing
+            elif not error_msg_ffr_pce: 
+                 st.session_state.current_ffr_pce_diff = "N/A (Source data series empty)"
 
-
-    # Display FFR vs PCE Plot
     with plot_placeholder_ffr_pce.container():
-        if st.session_state.get('ffr_pce_calculated'): # Check if button was clicked
-            # Plot if no total error OR if there's data (even with a partial fetch warning)
+        if st.session_state.get('ffr_pce_calculated'): 
             if not (st.session_state.ffr_pce_error and (st.session_state.ffr_pce_data is None or st.session_state.ffr_pce_data.empty)):
                 fig_ffr_pce = plotters.create_ffr_pce_comparison_plot(
-                    st.session_state.ffr_pce_data, # This might be None if fetch failed
+                    st.session_state.ffr_pce_data, 
                     ffr_series_id=config.FFR_VS_PCE_SERIES_IDS["ffr"],
-                    pce_series_id=config.FFR_VS_PCE_SERIES_IDS["core_pce_yoy"],
+                    pce_index_series_id=config.FFR_VS_PCE_SERIES_IDS["core_pce_index"], 
                     threshold=config.FFR_PCE_THRESHOLD
                 )
                 st.plotly_chart(fig_ffr_pce, use_container_width=True)
-            # If there was a total error and no data, the error message is already in plot_placeholder_ffr_pce
-        else: # Before button is clicked for the first time
+        else: 
             st.info("Click 'Fetch/Refresh Fed Funds vs Core PCE Data' to load and display the chart.")
 
-    # Display current difference metric using its placeholder
     with current_diff_placeholder_ffr_pce.container():
         if st.session_state.get('ffr_pce_calculated') and st.session_state.current_ffr_pce_diff is not None:
-            if isinstance(st.session_state.current_ffr_pce_diff, (float, int, np.number)): # Check if it's a number
+            if isinstance(st.session_state.current_ffr_pce_diff, (float, int, np.number)): 
                 st.metric(
-                    label=f"Latest Difference ({config.FFR_VS_PCE_NAMES['ffr']} - {config.FFR_VS_PCE_NAMES['core_pce_yoy']})",
+                    label=f"Latest Difference ({config.FFR_VS_PCE_NAMES['ffr']} - Core PCE YoY Calc.)", 
                     value=f"{st.session_state.current_ffr_pce_diff:.2f}%"
                 )
-                # Add a caption based on the threshold
                 if st.session_state.current_ffr_pce_diff > config.FFR_PCE_THRESHOLD:
                     st.caption(f"⚠️ Difference is above the {config.FFR_PCE_THRESHOLD}% threshold.")
                 else:
                     st.caption(f"✅ Difference is at or below the {config.FFR_PCE_THRESHOLD}% threshold.")
-            else: # If current_ffr_pce_diff is a string like "N/A..."
+            else: 
                 st.write(f"**Latest Difference:** {st.session_state.current_ffr_pce_diff}")
 
 

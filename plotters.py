@@ -8,7 +8,6 @@ import pandas as pd
 import numpy as np # For isinstance checks with numeric types
 
 # Import constants from config
-# Ensure config.py is in the same directory or accessible in PYTHONPATH
 import config
 
 def create_corr_plot(rolling_corr_data, ticker1, ticker2, window=config.ROLLING_WINDOW, years=config.YEARS_OF_DATA):
@@ -203,41 +202,39 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
     """
     Creates a plot comparing Fed Funds Rate and Core PCE YoY inflation (calculated from index).
     Colors the area between the two lines based on whether their difference exceeds a threshold.
+    `data_df` is expected to contain columns for `ffr_series_id` and `pce_index_series_id`.
     """
     fig = go.Figure()
     plot_title = "Federal Funds Rate vs. Core PCE Inflation (YoY)"
     
     if data_df is None or data_df.empty:
-        fig.update_layout(title=plot_title, annotations=[dict(text="No data available for FFR vs PCE plot.", showarrow=False)])
+        fig.update_layout(title=plot_title, annotations=[dict(text="No data available for FFR vs PCE plot.", showarrow=False, align='center')])
         return fig
 
     plot_df = data_df.copy()
 
-    # Ensure the required columns exist
+    # Ensure the source columns for FFR and PCE Index exist
     if ffr_series_id not in plot_df.columns or pce_index_series_id not in plot_df.columns:
         missing_cols = []
         if ffr_series_id not in plot_df.columns: missing_cols.append(ffr_series_id)
-        if pce_index_series_id not in plot_df.columns: missing_cols.append(pce_index_series_id)
-        fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing data columns: {', '.join(missing_cols)}", showarrow=False)])
+        if pce_index_series_id not in plot_df.columns: missing_cols.append(pce_index_series_id) # This should be PCEPILFE
+        fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing source data columns: {', '.join(missing_cols)}", showarrow=False, align='center')])
         return fig
 
     # Calculate Year-over-Year for PCE Index
-    # Ensure data is sorted by date for pct_change to work correctly over 12 periods
     plot_df.sort_index(inplace=True)
-    # Calculate YoY percentage change for the PCE index (needs 12 monthly periods)
-    # (Current Value - Value 12 months ago) / Value 12 months ago * 100
-    pce_yoy_calculated_series_name = 'PCE_YoY_Calculated' # Temporary name for the new column
-    plot_df[pce_yoy_calculated_series_name] = plot_df[pce_index_series_id].pct_change(periods=12) * 100
+    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' # Internal column name
+    plot_df[pce_yoy_calculated_col_name] = plot_df[pce_index_series_id].pct_change(periods=12) * 100
     
     # Drop rows where FFR or the *calculated* PCE YoY is NaN
-    plot_df.dropna(subset=[ffr_series_id, pce_yoy_calculated_series_name], inplace=True)
+    plot_df.dropna(subset=[ffr_series_id, pce_yoy_calculated_col_name], inplace=True)
 
     if plot_df.empty:
-        fig.update_layout(title=plot_title, annotations=[dict(text="Not enough overlapping data points after calculating PCE YoY.", showarrow=False)])
+        fig.update_layout(title=plot_title, annotations=[dict(text="Not enough overlapping data after calculating PCE YoY.", showarrow=False, align='center')])
         return fig
 
     ffr_rate = plot_df[ffr_series_id]
-    pce_rate_yoy = plot_df[pce_yoy_calculated_series_name] # Use the calculated YoY PCE
+    pce_rate_yoy = plot_df[pce_yoy_calculated_col_name] 
     difference = ffr_rate - pce_rate_yoy
 
     # Plot the main lines
@@ -256,12 +253,11 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
     legend_added_normal = False
 
     for _, segment in plot_df.groupby(group_ids):
-        if segment.empty or len(segment) < 2: # Need at least 2 points to draw a segment
+        if segment.empty or len(segment) < 2: 
             continue
             
         segment_ffr_val = segment[ffr_series_id].iloc[0]
-        # Use the calculated YoY PCE for the segment condition
-        segment_pce_yoy_val = segment[pce_yoy_calculated_series_name].iloc[0] 
+        segment_pce_yoy_val = segment[pce_yoy_calculated_col_name].iloc[0] 
         
         if pd.isna(segment_ffr_val) or pd.isna(segment_pce_yoy_val):
             continue
@@ -269,8 +265,7 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
         segment_is_risk = (segment_ffr_val - segment_pce_yoy_val) > threshold
         
         x_coords = list(segment.index) + list(segment.index[::-1])
-        # Y coordinates for fill use FFR and the calculated PCE YoY
-        y_coords = list(segment[ffr_series_id]) + list(segment[pce_yoy_calculated_series_name][::-1]) 
+        y_coords = list(segment[ffr_series_id]) + list(segment[pce_yoy_calculated_col_name][::-1]) 
         
         fill_color = 'rgba(231, 76, 60, 0.3)' if segment_is_risk else 'rgba(52, 152, 219, 0.3)'
         legend_name = None

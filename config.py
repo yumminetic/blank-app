@@ -12,6 +12,7 @@ from datetime import timedelta # For FED_JAWS_DURATION_DAYS
 ROLLING_WINDOW = 30
 YEARS_OF_DATA = 10  # For correlation data fetching
 FED_JAWS_DURATION_DAYS = 120 # Approx 4 months, for Fed Jaws chart
+FFR_PCE_THRESHOLD = 2.0 # Threshold for FFR vs PCE difference in percentage points
 
 # --- Default Ticker Symbols ---
 DEFAULT_TICKER_1_CORR = 'EURUSD=X'
@@ -41,10 +42,9 @@ if FRED_API_KEY:
         fred = None # Ensure fred is None if initialization fails
         FRED_API_KEY = None # Invalidate key if client fails
 else:
-    # This message is now more specific if the key was missing from secrets
-    if not fred_error_message: # If no specific error message was set above (e.g. key was empty string)
+    if not fred_error_message:
         fred_error_message = "FRED API Key is not configured. Please set it in Streamlit Secrets to use FRED data features."
-    print(fred_error_message) # Log for server-side debugging
+    print(fred_error_message)
 
 
 # --- Ticker Examples Data ---
@@ -75,14 +75,14 @@ ticker_examples = {
     }
 }
 ticker_data_list = []
-for category, tickers_in_category in ticker_examples.items(): # Renamed 'tickers' to avoid conflict
+for category, tickers_in_category in ticker_examples.items():
     for name, symbol in tickers_in_category.items():
         ticker_data_list.append({"Asset Class": category, "Description": name, "Yahoo Ticker": symbol})
 ticker_df = pd.DataFrame(ticker_data_list)
 ticker_df = ticker_df.sort_values(by=["Asset Class", "Description"]).reset_index(drop=True)
 
 
-# --- FRED Series Examples ---
+# --- FRED Series Examples (Single Viewer) ---
 FRED_SERIES_EXAMPLES = {
     "Effective Federal Funds Rate (Daily)": "DFF",
     "Nominal GDP (Quarterly)": "GDP",
@@ -91,6 +91,7 @@ FRED_SERIES_EXAMPLES = {
     "Core CPI (Less Food & Energy, Monthly)": "CPILFESL",
     "PCE Price Index (Monthly)": "PCEPI",
     "Core PCE Price Index (Monthly)": "PCEPILFE",
+    "Core PCE Year-on-Year (Monthly)": "PCEPILFECHPYA", # Added for clarity, used in comparison
     "Unemployment Rate (Monthly)": "UNRATE",
     "Initial Claims (Weekly)": "ICSA",
     "10-Year Treasury Constant Maturity Rate (Daily)": "DGS10",
@@ -100,6 +101,7 @@ FRED_SERIES_EXAMPLES = {
     "Retail Sales - Total (Monthly)": "RSAFS",
     "Gold Price (London Bullion, Daily)": "GOLDAMGBD228NLBM",
     "VIX (Volatility Index, Daily)": "VIXCLS",
+    "Effective Federal Funds Rate (Monthly Avg)": "FEDFUNDS", # Added for clarity, used in comparison
 }
 fred_series_options = list(FRED_SERIES_EXAMPLES.keys())
 
@@ -114,7 +116,21 @@ FED_JAWS_SERIES_IDS = [
     'DFEDTARL', # Federal Funds Target Range - Lower Limit
 ]
 
+# --- FRED Series IDs for Fed Funds Rate vs Core PCE Chart ---
+# Effective Federal Funds Rate (Monthly)
+# Personal Consumption Expenditures Excluding Food and Energy (Chain-Type Price Index), Percent Change from Year Ago, Monthly, Seasonally Adjusted
+FFR_VS_PCE_SERIES_IDS = {
+    "ffr": "FEDFUNDS",
+    "core_pce_yoy": "PCEPILFECHPYA"
+}
+FFR_VS_PCE_NAMES = {
+    "ffr": "Effective Federal Funds Rate (Monthly)",
+    "core_pce_yoy": "Core PCE Inflation YoY (Monthly)"
+}
+
+
 # --- LinkedIn Footer Configuration ---
 LINKEDIN_URL = "https://www.linkedin.com/in/kennethquah/"
 YOUR_NAME = "Kenneth Quah"
 LINKEDIN_SVG = """<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#0077B5" style="vertical-align: middle;"><title>LinkedIn</title><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>"""
+

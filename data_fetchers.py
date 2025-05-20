@@ -21,7 +21,7 @@ def calculate_rolling_correlation(ticker1, ticker2, window=ROLLING_WINDOW, years
     end_date = datetime.now()
     start_date = end_date - timedelta(days=years*365 + window + 50) # Buffer
     try:
-        data = yf.download([ticker1, ticker2], start=start_date, end=end_date, progress=False)
+        data = yf.download([ticker1, ticker2], start=start_date, end=end_date)['Close']
         if data is None or data.empty:
             # st.error(f"Failed to download data for {ticker1} or {ticker2}.") # UI feedback in app.py
             return None, f"Failed to download data for {ticker1} or {ticker2}."
@@ -29,7 +29,7 @@ def calculate_rolling_correlation(ticker1, ticker2, window=ROLLING_WINDOW, years
             # st.error("Could not find 'Close' price column in downloaded data.")
             return None, "Could not find 'Close' price column in downloaded data."
 
-        close_data = data.get('Close', pd.DataFrame())
+        close_data = data
         if close_data.empty:
             # st.warning(f"Could not retrieve 'Close' price data for {ticker1} or {ticker2}.")
             return None, f"Could not retrieve 'Close' price data for {ticker1} or {ticker2}."

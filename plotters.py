@@ -199,40 +199,46 @@ def create_fed_jaws_plot(jaws_data):
     )
     return fig
 
-def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_series_id, threshold=2.0):
+def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, threshold=2.0):
     """
-    Creates a plot comparing Fed Funds Rate and Core PCE YoY inflation.
+    Creates a plot comparing Fed Funds Rate and Core PCE YoY inflation (calculated from index).
     Colors the area between the two lines based on whether their difference exceeds a threshold.
     """
     fig = go.Figure()
     plot_title = "Federal Funds Rate vs. Core PCE Inflation (YoY)"
     
-    # Ensure data is a DataFrame and not empty
     if data_df is None or data_df.empty:
         fig.update_layout(title=plot_title, annotations=[dict(text="No data available for FFR vs PCE plot.", showarrow=False)])
         return fig
 
-    # Make a copy to avoid modifying original DataFrame from cache
     plot_df = data_df.copy()
 
     # Ensure the required columns exist
-    if ffr_series_id not in plot_df.columns or pce_series_id not in plot_df.columns:
+    if ffr_series_id not in plot_df.columns or pce_index_series_id not in plot_df.columns:
         missing_cols = []
         if ffr_series_id not in plot_df.columns: missing_cols.append(ffr_series_id)
-        if pce_series_id not in plot_df.columns: missing_cols.append(pce_series_id)
+        if pce_index_series_id not in plot_df.columns: missing_cols.append(pce_index_series_id)
         fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing data columns: {', '.join(missing_cols)}", showarrow=False)])
         return fig
 
-    # Drop rows where either of the key series is NaN before calculations
-    plot_df.dropna(subset=[ffr_series_id, pce_series_id], inplace=True)
+    # Calculate Year-over-Year for PCE Index
+    # Ensure data is sorted by date for pct_change to work correctly over 12 periods
+    plot_df.sort_index(inplace=True)
+    # Calculate YoY percentage change for the PCE index (needs 12 monthly periods)
+    # (Current Value - Value 12 months ago) / Value 12 months ago * 100
+    pce_yoy_calculated_series_name = 'PCE_YoY_Calculated' # Temporary name for the new column
+    plot_df[pce_yoy_calculated_series_name] = plot_df[pce_index_series_id].pct_change(periods=12) * 100
+    
+    # Drop rows where FFR or the *calculated* PCE YoY is NaN
+    plot_df.dropna(subset=[ffr_series_id, pce_yoy_calculated_series_name], inplace=True)
 
     if plot_df.empty:
-        fig.update_layout(title=plot_title, annotations=[dict(text="Not enough overlapping data points for FFR and PCE.", showarrow=False)])
+        fig.update_layout(title=plot_title, annotations=[dict(text="Not enough overlapping data points after calculating PCE YoY.", showarrow=False)])
         return fig
 
     ffr_rate = plot_df[ffr_series_id]
-    pce_rate = plot_df[pce_series_id]
-    difference = ffr_rate - pce_rate
+    pce_rate_yoy = plot_df[pce_yoy_calculated_series_name] # Use the calculated YoY PCE
+    difference = ffr_rate - pce_rate_yoy
 
     # Plot the main lines
     fig.add_trace(go.Scatter(
@@ -240,50 +246,42 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_series_id, thresh
         line=dict(color='blue', width=2)
     ))
     fig.add_trace(go.Scatter(
-        x=plot_df.index, y=pce_rate, mode='lines', name=config.FFR_VS_PCE_NAMES.get("core_pce_yoy", pce_series_id),
+        x=plot_df.index, y=pce_rate_yoy, mode='lines', name=config.FFR_VS_PCE_NAMES.get("core_pce_yoy_calculated", "Core PCE YoY (Calc.)"),
         line=dict(color='red', width=2)
     ))
-
-    # Logic for conditional fill
-    # Identify contiguous segments based on the condition (difference > threshold)
-    is_risk_condition = difference > threshold
     
-    # Find points where the condition changes
-    # The cumsum of the shifted diff creates groups for contiguous segments
+    is_risk_condition = difference > threshold
     group_ids = is_risk_condition.ne(is_risk_condition.shift()).cumsum()
-
     legend_added_risk = False
     legend_added_normal = False
 
     for _, segment in plot_df.groupby(group_ids):
-        if segment.empty:
+        if segment.empty or len(segment) < 2: # Need at least 2 points to draw a segment
             continue
             
-        # Determine the condition for this specific segment (based on its first point)
-        # This ensures the segment's condition is consistent
         segment_ffr_val = segment[ffr_series_id].iloc[0]
-        segment_pce_val = segment[pce_series_id].iloc[0]
+        # Use the calculated YoY PCE for the segment condition
+        segment_pce_yoy_val = segment[pce_yoy_calculated_series_name].iloc[0] 
         
-        # Check for NaN again in case groupby created an empty or all-NaN segment somehow
-        if pd.isna(segment_ffr_val) or pd.isna(segment_pce_val):
+        if pd.isna(segment_ffr_val) or pd.isna(segment_pce_yoy_val):
             continue
 
-        segment_is_risk = (segment_ffr_val - segment_pce_val) > threshold
+        segment_is_risk = (segment_ffr_val - segment_pce_yoy_val) > threshold
         
-        # Create the path for filling: (x_segment, y_ffr_segment) -> (x_segment_reversed, y_pce_segment_reversed)
         x_coords = list(segment.index) + list(segment.index[::-1])
-        y_coords = list(segment[ffr_series_id]) + list(segment[pce_series_id][::-1])
+        # Y coordinates for fill use FFR and the calculated PCE YoY
+        y_coords = list(segment[ffr_series_id]) + list(segment[pce_yoy_calculated_series_name][::-1]) 
         
-        fill_color = 'rgba(231, 76, 60, 0.3)' if segment_is_risk else 'rgba(52, 152, 219, 0.3)' # Reddish vs Bluish
+        fill_color = 'rgba(231, 76, 60, 0.3)' if segment_is_risk else 'rgba(52, 152, 219, 0.3)'
         legend_name = None
         show_legend_for_segment = False
 
         if segment_is_risk and not legend_added_risk:
-            legend_name = f'Gap (FFR - PCE > {threshold}%)'
+            legend_name = f'Gap (FFR - Calc. PCE YoY > {threshold}%)'
             show_legend_for_segment = True
             legend_added_risk = True
         elif not segment_is_risk and not legend_added_normal:
-            legend_name = f'Gap (FFR - PCE <= {threshold}%)'
+            legend_name = f'Gap (FFR - Calc. PCE YoY <= {threshold}%)'
             show_legend_for_segment = True
             legend_added_normal = True
             
@@ -292,10 +290,10 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_series_id, thresh
             y=y_coords,
             fill='toself',
             fillcolor=fill_color,
-            line_width=0, # No border line for the fill shape itself
+            line_width=0, 
             name=legend_name,
             showlegend=show_legend_for_segment,
-            hoverinfo='skip' # Don't show hover for fill shapes
+            hoverinfo='skip' 
         ))
 
     fig.update_layout(

@@ -90,8 +90,8 @@ FRED_SERIES_EXAMPLES = {
     "CPI - All Urban Consumers (Monthly)": "CPIAUCSL",
     "Core CPI (Less Food & Energy, Monthly)": "CPILFESL",
     "PCE Price Index (Monthly)": "PCEPI",
-    "Core PCE Price Index (Monthly)": "PCEPILFE",
-    "Core PCE Year-on-Year (Monthly)": "PCEPILFECHPYA", # Added for clarity, used in comparison
+    "Core PCE Price Index (Monthly)": "PCEPILFE", # This is the index
+    "Core PCE Year-on-Year (Monthly)": "PCEPILFECHPYA", 
     "Unemployment Rate (Monthly)": "UNRATE",
     "Initial Claims (Weekly)": "ICSA",
     "10-Year Treasury Constant Maturity Rate (Daily)": "DGS10",
@@ -101,7 +101,7 @@ FRED_SERIES_EXAMPLES = {
     "Retail Sales - Total (Monthly)": "RSAFS",
     "Gold Price (London Bullion, Daily)": "GOLDAMGBD228NLBM",
     "VIX (Volatility Index, Daily)": "VIXCLS",
-    "Effective Federal Funds Rate (Monthly Avg)": "FEDFUNDS", # Added for clarity, used in comparison
+    "Effective Federal Funds Rate (Monthly Avg)": "FEDFUNDS", 
 }
 fred_series_options = list(FRED_SERIES_EXAMPLES.keys())
 
@@ -118,14 +118,15 @@ FED_JAWS_SERIES_IDS = [
 
 # --- FRED Series IDs for Fed Funds Rate vs Core PCE Chart ---
 # Effective Federal Funds Rate (Monthly)
-# Personal Consumption Expenditures Excluding Food and Energy (Chain-Type Price Index), Percent Change from Year Ago, Monthly, Seasonally Adjusted
+# Personal Consumption Expenditures Excluding Food and Energy (Chain-Type Price Index), Monthly
 FFR_VS_PCE_SERIES_IDS = {
     "ffr": "FEDFUNDS",
-    "core_pce_yoy": "PCEPILFECHPYA"
+    "core_pce_index": "PCEPILFE" # Changed from core_pce_yoy to core_pce_index
 }
 FFR_VS_PCE_NAMES = {
     "ffr": "Effective Federal Funds Rate (Monthly)",
-    "core_pce_yoy": "Core PCE Inflation YoY (Monthly)"
+    "core_pce_index": "Core PCE Price Index (Monthly)", # Name updated
+    "core_pce_yoy_calculated": "Core PCE Inflation YoY (Calculated)" # For the calculated series
 }
 
 

@@ -1,4 +1,4 @@
-# app.py
+# streamlit_app.py
 """
 Main Streamlit application file for the Financial Dashboard.
 Handles UI, state management, and orchestrates calls to other modules.
@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 import traceback # For detailed error printing if needed directly in UI logic
 
 # Import from custom modules
+# These files (config.py, data_fetchers.py, plotters.py, utils.py)
+# must be in the same directory as streamlit_app.py
 import config
 import data_fetchers
 import plotters
@@ -62,27 +64,33 @@ with col1_corr:
         "Ticker 1:", value=st.session_state.ticker1_input_corr, key="ticker1_corr_widget",
         help="Enter a Yahoo Finance ticker symbol (e.g., AAPL, ^GSPC, EURUSD=X)."
     )
+    # Ensure input is processed and stored back to session state
     st.session_state.ticker1_input_corr = ticker1_input_val_corr.strip().upper() if isinstance(ticker1_input_val_corr, str) else config.DEFAULT_TICKER_1_CORR
+
 with col2_corr:
     ticker2_input_val_corr = st.text_input(
         "Ticker 2:", value=st.session_state.ticker2_input_corr, key="ticker2_corr_widget",
         help="Enter another Yahoo Finance ticker symbol (e.g., GLD, ^IXIC, BTC-USD)."
     )
+    # Ensure input is processed and stored back to session state
     st.session_state.ticker2_input_corr = ticker2_input_val_corr.strip().upper() if isinstance(ticker2_input_val_corr, str) else config.DEFAULT_TICKER_2_CORR
 
 calculate_corr_button = st.button("Calculate Correlation", key="corr_button", type="primary")
-plot_placeholder_corr = st.empty()
+plot_placeholder_corr = st.empty() # Placeholder for the plot or messages
 
 if calculate_corr_button:
     t1_corr = st.session_state.ticker1_input_corr
     t2_corr = st.session_state.ticker2_input_corr
     st.session_state.rolling_corr_data = None # Reset previous data
     st.session_state.rolling_corr_error = None # Reset previous error
+    st.session_state.ticker1_calculated_corr = t1_corr # Store tickers used for this calculation attempt
+    st.session_state.ticker2_calculated_corr = t2_corr
 
     if t1_corr and t2_corr:
         if t1_corr == t2_corr:
             st.warning("Please enter two different ticker symbols.")
-            st.session_state.ticker1_calculated_corr = None # Clear calculated state
+            # Clear calculated state if inputs are invalid for plotting
+            st.session_state.ticker1_calculated_corr = None
             st.session_state.ticker2_calculated_corr = None
         else:
             with st.spinner(f"Calculating {config.ROLLING_WINDOW}-day rolling correlation for {t1_corr} vs {t2_corr}..."):
@@ -91,34 +99,36 @@ if calculate_corr_button:
                 )
                 st.session_state.rolling_corr_data = result_corr
                 st.session_state.rolling_corr_error = error_msg_corr
-                st.session_state.ticker1_calculated_corr = t1_corr # Set calculated tickers regardless of error for plot title
-                st.session_state.ticker2_calculated_corr = t2_corr
                 if error_msg_corr:
-                    st.error(f"Correlation Error: {error_msg_corr}") # Display error from fetcher
+                    # Display error immediately after calculation attempt
+                    plot_placeholder_corr.error(f"Correlation Error: {error_msg_corr}")
     elif not t1_corr and not t2_corr:
         st.warning("Please enter ticker symbols in both fields.")
+        st.session_state.ticker1_calculated_corr = None; st.session_state.ticker2_calculated_corr = None
     else:
         st.warning("Please enter a ticker symbol in the missing field.")
+        st.session_state.ticker1_calculated_corr = None; st.session_state.ticker2_calculated_corr = None
 
-# Display Correlation Plot
-# This block always runs to show either the plot, an error message from the data fetcher, or the initial info message.
-with plot_placeholder_corr.container():
+
+# Display Correlation Plot (or info/error message)
+# This block runs on every rerun, including after the button click logic above.
+with plot_placeholder_corr.container(): # Use the placeholder defined earlier
+    # Check if a calculation was attempted for these tickers
     if st.session_state.get('ticker1_calculated_corr') and st.session_state.get('ticker2_calculated_corr'):
-        # If an error occurred during data fetching, it's stored in rolling_corr_error
-        # The plotter function is designed to handle None or empty data and display a message on the chart
-        fig_corr = plotters.create_corr_plot(
-            st.session_state.rolling_corr_data,
-            st.session_state.ticker1_calculated_corr,
-            st.session_state.ticker2_calculated_corr,
-            window=config.ROLLING_WINDOW, # Pass from config
-            years=config.YEARS_OF_DATA   # Pass from config
-        )
-        st.plotly_chart(fig_corr, use_container_width=True)
-        if st.session_state.rolling_corr_error and st.session_state.rolling_corr_data is None:
-            # This is an additional textual error if the plot itself doesn't convey enough
-            # st.error(f"Details: {st.session_state.rolling_corr_error}") # Already shown above
-            pass # Error is shown above when button is clicked
+        # If there was an error message from the fetcher, and no data, it's already displayed by the button logic.
+        # The plotter function handles None or empty data by showing a message on the plot itself.
+        if not st.session_state.rolling_corr_error or st.session_state.rolling_corr_data is not None: # Plot if no error or if there's data despite a warning
+            fig_corr = plotters.create_corr_plot(
+                st.session_state.rolling_corr_data,
+                st.session_state.ticker1_calculated_corr,
+                st.session_state.ticker2_calculated_corr,
+                window=config.ROLLING_WINDOW,
+                years=config.YEARS_OF_DATA
+            )
+            st.plotly_chart(fig_corr, use_container_width=True)
+        # If st.session_state.rolling_corr_error exists and data is None, error is shown by button logic.
     else:
+        # Initial state or after invalid input that cleared calculated tickers
         st.info("Enter two ticker symbols and click 'Calculate Correlation' to view the rolling correlation plot.")
 
 
@@ -133,10 +143,18 @@ ticker_input_val_skew = st.text_input(
 )
 st.session_state.ticker_input_skew = ticker_input_val_skew.strip().upper() if isinstance(ticker_input_val_skew, str) else config.DEFAULT_TICKER_SKEW
 
+# Fetch expirations based on the current ticker input
 expirations, error_msg_exp = data_fetchers.get_expiration_dates(st.session_state.ticker_input_skew)
-selected_expiry_for_selectbox = st.session_state.expiry_input_skew # Retain previous selection if valid
+selected_expiry_for_selectbox = None # Initialize
 
-if expirations:
+if error_msg_exp: # If there was an error fetching expirations (e.g. invalid ticker)
+    if st.session_state.ticker_input_skew: # Only show warning if a ticker has been input
+        st.warning(error_msg_exp)
+    # expiry_input_skew remains None or its previous valid state if ticker changed to invalid
+    # This ensures the selectbox doesn't try to render with bad data.
+    # The button will be disabled if selected_expiry_for_selectbox is None.
+
+if expirations: # Only proceed if expirations were successfully fetched
     try:
         today = pd.Timestamp.now().normalize()
         exp_dates_ts = pd.to_datetime(expirations)
@@ -145,22 +163,25 @@ if expirations:
 
         if not future_dates_ts.empty:
             target_date = today + pd.Timedelta(days=90)
-            closest_date_ts = future_dates_ts[np.abs((future_dates_ts - target_date).total_seconds()).argmin()]
+            # Find the index of the date in future_dates_ts closest to target_date
+            closest_date_idx_in_future = np.abs((future_dates_ts - target_date).total_seconds()).argmin()
+            closest_date_ts = future_dates_ts[closest_date_idx_in_future]
             default_expiry_str = closest_date_ts.strftime('%Y-%m-%d')
             if default_expiry_str in expirations:
                 default_sel_index = expirations.index(default_expiry_str)
-        elif expirations: # Only past dates
-            default_sel_index = len(expirations) -1
+        elif expirations: # Only past dates, select the last one
+            default_sel_index = len(expirations) - 1
 
-        # Try to keep the selected expiry if the ticker hasn't changed and the expiry is still valid
-        current_selection_index = default_sel_index
+        # Determine current index for selectbox
+        # If ticker hasn't changed AND previous expiry is still in the list, use it
+        current_selection_index = default_sel_index # Default to smart selection
         if st.session_state.ticker_input_skew == st.session_state.get('ticker_calculated_skew') and \
            st.session_state.get('expiry_calculated_skew') in expirations:
             current_selection_index = expirations.index(st.session_state.expiry_calculated_skew)
         
-        # Update session state for selectbox from its own output
+        # The selectbox's state is managed by st.session_state.expiry_input_skew
         st.session_state.expiry_input_skew = st.selectbox(
-            "Select Expiration Date:", expirations, index=current_selection_index, key="expiry_select_widget",
+            "Select Expiration Date:", expirations, index=current_selection_index, key="expiry_select_widget_skew", # Unique key
             help="Choose the options contract expiration date."
         )
         selected_expiry_for_selectbox = st.session_state.expiry_input_skew
@@ -168,22 +189,29 @@ if expirations:
     except Exception as e:
         st.error(f"Error processing expiration dates: {e}")
         print(f"Error processing expiration dates: {e}\n{traceback.format_exc()}")
-        # Fallback selectbox if smart defaulting fails
-        st.session_state.expiry_input_skew = st.selectbox(
-            "Select Expiration Date (fallback):", expirations, key="expiry_select_widget_fallback"
-        )
-        selected_expiry_for_selectbox = st.session_state.expiry_input_skew
-elif st.session_state.ticker_input_skew: # Only show warning if a ticker has been input
-    st.warning(error_msg_exp or f"Could not find options data or expirations for '{st.session_state.ticker_input_skew}'.")
+        # Fallback: if smart defaulting fails, allow selection but might not be ideal
+        if expirations: # Ensure expirations is not None here
+             st.session_state.expiry_input_skew = st.selectbox(
+                "Select Expiration Date (fallback):", expirations, key="expiry_select_widget_fallback_skew" # Unique key
+            )
+             selected_expiry_for_selectbox = st.session_state.expiry_input_skew
+elif st.session_state.ticker_input_skew and not error_msg_exp: # Ticker entered, no expirations, no specific error from fetcher
+     st.info(f"No option expiration dates found for '{st.session_state.ticker_input_skew}'. It might not have options or data is temporarily unavailable.")
+
 
 graph_skew_button = st.button("Graph IV Skew", key="skew_button", type="primary", disabled=(not selected_expiry_for_selectbox))
 plot_placeholder_skew = st.empty()
 
 if graph_skew_button:
     ticker_to_graph_skew = st.session_state.ticker_input_skew
-    expiry_to_graph_skew = st.session_state.expiry_input_skew # Use the value from selectbox's state
+    # Use the confirmed selected_expiry_for_selectbox for the calculation
+    expiry_to_graph_skew = selected_expiry_for_selectbox
+
+    # Reset previous state for this section
     st.session_state.calls_data_skew = None; st.session_state.puts_data_skew = None; st.session_state.price_skew = None
     st.session_state.skew_error = None
+    st.session_state.ticker_calculated_skew = ticker_to_graph_skew # Store for plot title
+    st.session_state.expiry_calculated_skew = expiry_to_graph_skew # Store for plot title
 
     if ticker_to_graph_skew and expiry_to_graph_skew:
         with st.spinner(f"Fetching option chain data for {ticker_to_graph_skew} (Expiry: {expiry_to_graph_skew})..."):
@@ -192,24 +220,25 @@ if graph_skew_button:
             st.session_state.puts_data_skew = puts
             st.session_state.price_skew = price
             st.session_state.skew_error = error_msg_fetch_skew
-            st.session_state.ticker_calculated_skew = ticker_to_graph_skew
-            st.session_state.expiry_calculated_skew = expiry_to_graph_skew
             if error_msg_fetch_skew:
-                st.error(f"Option Chain Error: {error_msg_fetch_skew}")
-    else:
-        st.warning("Please enter a ticker and select an expiration date.")
+                plot_placeholder_skew.error(f"Option Chain Error: {error_msg_fetch_skew}")
+    else: # Should be caught by button's disabled state, but as a safeguard
+        st.warning("Please enter a ticker and select a valid expiration date.")
         st.session_state.ticker_calculated_skew = None; st.session_state.expiry_calculated_skew = None
 
 
 with plot_placeholder_skew.container():
     if st.session_state.get('ticker_calculated_skew') and st.session_state.get('expiry_calculated_skew'):
-        fig_skew = plotters.create_iv_skew_plot(
-            st.session_state.calls_data_skew, st.session_state.puts_data_skew,
-            st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew,
-            st.session_state.price_skew
-        )
-        st.plotly_chart(fig_skew, use_container_width=True)
-        # Error message is handled by the plotter or shown above on button click
+        # Plot if no error or if there's data despite a warning
+        if not st.session_state.skew_error or \
+           (st.session_state.calls_data_skew is not None or st.session_state.puts_data_skew is not None):
+            fig_skew = plotters.create_iv_skew_plot(
+                st.session_state.calls_data_skew, st.session_state.puts_data_skew,
+                st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew,
+                st.session_state.price_skew
+            )
+            st.plotly_chart(fig_skew, use_container_width=True)
+        # If st.session_state.skew_error exists and no data, error shown by button logic.
     else:
         st.info("Enter an equity/ETF ticker, select an expiration date, and click 'Graph IV Skew'.")
 
@@ -221,16 +250,21 @@ st.write("Fetches and displays a single time series from the FRED database.")
 plot_placeholder_fred = st.empty()
 caption_placeholder_fred = st.empty()
 
-if config.fred is None: # Check the fred instance from config
-    with plot_placeholder_fred.container():
+if config.fred is None: # Check the fred instance from config.py
+    with plot_placeholder_fred.container(): # Use the placeholder
         st.error(config.fred_error_message or "FRED API client could not be initialized. Please configure your FRED_API_KEY in Streamlit Secrets.")
 else:
     # Use the selectbox value directly from session_state to ensure persistence
+    # Ensure the index is valid if the stored name is not in options (e.g. after code change)
+    try:
+        current_fred_series_name_index = config.fred_series_options.index(st.session_state.fred_series_name_input)
+    except ValueError:
+        current_fred_series_name_index = config.fred_series_options.index(config.DEFAULT_FRED_SERIES_NAME) # Fallback
+        st.session_state.fred_series_name_input = config.DEFAULT_FRED_SERIES_NAME # Reset state to default
+
     st.session_state.fred_series_name_input = st.selectbox(
         "Select FRED Series:", options=config.fred_series_options,
-        index=config.fred_series_options.index(st.session_state.fred_series_name_input)
-            if st.session_state.fred_series_name_input in config.fred_series_options
-            else config.fred_series_options.index(config.DEFAULT_FRED_SERIES_NAME), # Fallback to default
+        index=current_fred_series_name_index,
         key="fred_series_select_widget", help="Select an economic data series from FRED."
     )
     selected_series_id_fred = config.FRED_SERIES_EXAMPLES.get(st.session_state.fred_series_name_input)
@@ -239,8 +273,11 @@ else:
     if fetch_fred_button:
         series_name_to_fetch_fred = st.session_state.fred_series_name_input
         series_id_to_fetch_fred = selected_series_id_fred
-        st.session_state.fred_data = None; st.session_state.fred_series_info = None # Reset
+        # Reset previous state for this section
+        st.session_state.fred_data = None; st.session_state.fred_series_info = None
         st.session_state.fred_data_error = None; st.session_state.fred_info_error = None
+        st.session_state.fred_series_id_calculated = series_id_to_fetch_fred
+        st.session_state.fred_series_name_calculated = series_name_to_fetch_fred
 
         if series_id_to_fetch_fred:
             with st.spinner(f"Fetching data for {series_id_to_fetch_fred} ({series_name_to_fetch_fred})..."):
@@ -251,37 +288,42 @@ else:
                 st.session_state.fred_series_info = s_info
                 st.session_state.fred_data_error = err_data
                 st.session_state.fred_info_error = err_info
-                st.session_state.fred_series_id_calculated = series_id_to_fetch_fred
-                st.session_state.fred_series_name_calculated = series_name_to_fetch_fred
 
-                if err_data: st.error(f"FRED Data Error: {err_data}")
-                if err_info: st.warning(f"FRED Metadata Error: {err_info}") # Warning for metadata
+                if err_data: # Display error immediately
+                    plot_placeholder_fred.error(f"FRED Data Error: {err_data}")
+                if err_info: # Display warning for metadata separately if data was fetched
+                    caption_placeholder_fred.warning(f"FRED Metadata Warning: {err_info}")
         else:
             st.warning("Invalid FRED series selection.")
-            st.session_state.fred_series_id_calculated = None
+            st.session_state.fred_series_id_calculated = None # Clear calculated ID
 
+    # Display FRED Plot and Caption
     with plot_placeholder_fred.container():
         if st.session_state.get('fred_series_id_calculated'):
-            fig_fred = plotters.create_fred_plot(
-                st.session_state.fred_data,
-                st.session_state.fred_series_id_calculated,
-                st.session_state.fred_series_info
-            )
-            st.plotly_chart(fig_fred, use_container_width=True)
-        else:
+            # Plot if no data error or if data exists despite info error
+            if not st.session_state.fred_data_error or st.session_state.fred_data is not None:
+                fig_fred = plotters.create_fred_plot(
+                    st.session_state.fred_data,
+                    st.session_state.fred_series_id_calculated,
+                    st.session_state.fred_series_info
+                )
+                st.plotly_chart(fig_fred, use_container_width=True)
+            # If fred_data_error exists and data is None, error is shown by button logic.
+        else: # Initial state
             st.info("Select a FRED economic data series and click 'Fetch & Plot FRED Data'.")
 
     with caption_placeholder_fred.container():
         if st.session_state.get('fred_series_id_calculated') and st.session_state.fred_series_info is not None:
             current_info_fred = st.session_state.fred_series_info
-            if not current_info_fred.empty:
+            if not current_info_fred.empty: # Check if series_info (pandas Series) has content
                 last_updated = current_info_fred.get('last_updated', 'N/A')
-                notes = current_info_fred.get('notes', 'N/A')
-                notes_display = (notes[:200] + '...') if notes and len(notes) > 200 else notes
+                notes = current_info_fred.get('notes', 'N/A') # Notes can be long
+                notes_display = (notes[:250] + '...') if notes and len(notes) > 250 else notes # Truncate notes
                 st.caption(f"Last Updated: {last_updated}. Notes: {notes_display if notes_display else 'N/A'}")
-            elif st.session_state.fred_data is not None: # Data exists but info might be empty/failed
-                st.caption("Metadata might not be fully available for this series.")
-        # No caption if nothing calculated yet
+            # If fred_info_error was shown, this part might not display or show N/A
+            elif st.session_state.fred_data is not None and not st.session_state.fred_info_error : # Data exists, no info error, but info is empty
+                st.caption("Metadata is available but some fields might be empty for this series.")
+        # No caption if nothing calculated yet or if info fetch failed and warning was shown
 
 
 # --- Section 4: Fed's Jaws Chart ---
@@ -299,6 +341,8 @@ else:
     if fetch_jaws_button:
         st.session_state.fed_jaws_data = None # Reset
         st.session_state.fed_jaws_error = None
+        st.session_state.fed_jaws_calculated = True # Mark as attempted
+
         with st.spinner(f"Fetching last {config.FED_JAWS_DURATION_DAYS} days of Fed's Jaws data from FRED..."):
             end_date_jaws = datetime.now()
             start_date_jaws = end_date_jaws - timedelta(days=config.FED_JAWS_DURATION_DAYS)
@@ -308,24 +352,23 @@ else:
             )
             st.session_state.fed_jaws_data = jaws_data_result
             st.session_state.fed_jaws_error = error_msg_jaws
-            st.session_state.fed_jaws_calculated = True # Mark as attempted
             if error_msg_jaws:
-                # If it's a partial error (some series failed but others fetched), data might still exist
-                if jaws_data_result is not None:
-                     st.warning(f"Fed's Jaws Data Warning: {error_msg_jaws}")
+                # Display error/warning immediately
+                if jaws_data_result is not None and not jaws_data_result.empty: # Partial success
+                     plot_placeholder_jaws.warning(f"Fed's Jaws Data Warning: {error_msg_jaws}")
                 else: # Total failure
-                     st.error(f"Fed's Jaws Data Error: {error_msg_jaws}")
+                     plot_placeholder_jaws.error(f"Fed's Jaws Data Error: {error_msg_jaws}")
 
-
+    # Display Fed's Jaws Plot
     with plot_placeholder_jaws.container():
-        if st.session_state.get('fed_jaws_calculated'): # If button was clicked
-            fig_jaws = plotters.create_fed_jaws_plot(st.session_state.fed_jaws_data) # Plotter handles None data
-            st.plotly_chart(fig_jaws, use_container_width=True)
-            if st.session_state.fed_jaws_data is not None and not st.session_state.fed_jaws_data.empty:
-                st.caption(f"Data includes: {', '.join(config.FED_JAWS_SERIES_IDS)}. Target range limits (DFEDTARU, DFEDTARL) shown as dotted red lines.")
-            elif st.session_state.fed_jaws_error and st.session_state.fed_jaws_data is None:
-                 # Error already shown above, plot placeholder will show "no data"
-                 pass
+        if st.session_state.get('fed_jaws_calculated'): # If button was clicked or calculation attempted
+            # Plot if no total error or if there's data despite a partial warning
+            if not (st.session_state.fed_jaws_error and (st.session_state.fed_jaws_data is None or st.session_state.fed_jaws_data.empty)) :
+                fig_jaws = plotters.create_fed_jaws_plot(st.session_state.fed_jaws_data) # Plotter handles None/empty data
+                st.plotly_chart(fig_jaws, use_container_width=True)
+                if st.session_state.fed_jaws_data is not None and not st.session_state.fed_jaws_data.empty:
+                    st.caption(f"Data includes: {', '.join(config.FED_JAWS_SERIES_IDS)}. Target range limits (DFEDTARU, DFEDTARL) shown as dotted red lines.")
+            # If fed_jaws_error exists and data is None/empty, error is shown by button logic.
         else: # Before button is clicked
             st.info(f"Click 'Fetch/Refresh Fed's Jaws Data' to load and display the chart for the last {config.FED_JAWS_DURATION_DAYS} days.")
 
@@ -342,6 +385,7 @@ with st.expander("Show Example Ticker Symbols (Yahoo Finance)"):
         }
     )
 st.divider()
+# Generate footer HTML using the utility function and constants from config
 footer_html_content = utils.generate_footer_html(config.YOUR_NAME, config.LINKEDIN_URL, config.LINKEDIN_SVG)
 st.markdown(footer_html_content, unsafe_allow_html=True)
 st.caption("Market data sourced from Yahoo Finance via yfinance library. Economic data sourced from FRED® (Federal Reserve Economic Data) via fredapi library. Data may be delayed.")

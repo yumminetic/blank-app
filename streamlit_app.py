@@ -27,9 +27,10 @@ sections = {
 # Create a horizontal list of links styled as tabs
 tab_links = []
 for title, anchor_id in sections.items():
-    tab_links.append(f"<a href='#{anchor_id}' style='margin: 0 10px; padding: 8px 12px; text-decoration: none; color: #4F8BF9; font-weight: 500; border-radius: 5px; background-color: #f0f2f6; display: inline-block;' onmouseover='this.style.backgroundColor=\"#e0e2e6\"' onmouseout='this.style.backgroundColor=\"#f0f2f6\"'>{title}</a>")
+    # Added margin-bottom: 8px; for spacing when tabs wrap
+    tab_links.append(f"<a href='#{anchor_id}' style='margin: 0 10px 8px 10px; padding: 8px 12px; text-decoration: none; color: #4F8BF9; font-weight: 500; border-radius: 5px; background-color: #f0f2f6; display: inline-block;' onmouseover='this.style.backgroundColor=\"#e0e2e6\"' onmouseout='this.style.backgroundColor=\"#f0f2f6\"'>{title}</a>")
 
-tabs_html = "<div style='text-align: center; margin-bottom: 25px; margin-top: 5px;'>" + "".join(tab_links) + "</div>"
+tabs_html = "<div style='text-align: center; margin-bottom: 25px; margin-top: 5px; line-height: 1.8;'>" + "".join(tab_links) + "</div>" # Added line-height to the container for overall spacing too
 st.markdown(tabs_html, unsafe_allow_html=True)
 st.markdown("<hr/>", unsafe_allow_html=True)
 

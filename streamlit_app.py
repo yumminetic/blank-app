@@ -4,11 +4,33 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date 
 import traceback 
-import yfinance as yf # Import yfinance
+import yfinance as yf 
 import config, data_fetchers, plotters, utils
 
 st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide")
 st.title("📊 Macro/Quantamental Dashboard")
+
+# --- Tab Navigation ---
+# Define section titles and their corresponding anchor IDs
+sections = {
+    "Correlation Calculator": "correlation_calculator",
+    "IV Skew Viewer": "iv_skew_viewer",
+    "FRED Single Series": "fred_single_viewer",
+    "Fed's Jaws": "fed_jaws_chart",
+    "FFR vs Core PCE": "ffr_pce_chart",
+    "Gold vs Real Yield": "gold_real_yield_chart",
+    "Ticker Reference": "ticker_reference"
+}
+
+# Create a horizontal list of links styled as tabs
+tab_links = []
+for title, anchor_id in sections.items():
+    tab_links.append(f"<a href='#{anchor_id}' style='margin: 0 10px; padding: 8px 12px; text-decoration: none; color: #4F8BF9; font-weight: 500; border-radius: 5px; background-color: #f0f2f6; display: inline-block;' onmouseover='this.style.backgroundColor=\"#e0e2e6\"' onmouseout='this.style.backgroundColor=\"#f0f2f6\"'>{title}</a>")
+
+tabs_html = "<div style='text-align: center; margin-bottom: 25px; margin-top: 5px;'>" + "".join(tab_links) + "</div>"
+st.markdown(tabs_html, unsafe_allow_html=True)
+st.markdown("<hr/>", unsafe_allow_html=True)
+
 
 # --- Initialize Session State ---
 default_fred_start = date(2000, 1, 1) 
@@ -48,11 +70,10 @@ utils.init_state('ffr_pce_show_recession', True)
 
 # Gold vs Real Yield
 utils.init_state('gold_ry_data', None); utils.init_state('gold_ry_error', None); utils.init_state('gold_ry_calculated', False)
-# latest_gold and latest_real_yield will be derived when displaying metrics
+utils.init_state('yfinance_gold_col_name_plotter', None) 
 utils.init_state('gold_ry_start_date', default_fred_start) 
 utils.init_state('gold_ry_end_date', default_fred_end)     
 utils.init_state('gold_ry_show_recession', True)        
-utils.init_state('yfinance_gold_col_name_plotter', None) # To pass the correct gold column name to plotter
 
 # --- Helper for Date Inputs ---
 def date_input_cols(start_date_key, end_date_key, section_key_suffix):
@@ -64,6 +85,7 @@ def date_input_cols(start_date_key, end_date_key, section_key_suffix):
     return st.session_state[start_date_key], st.session_state[end_date_key]
 
 # --- Section 1: Rolling Correlation ---
+st.markdown(f"<a name='{sections['Correlation Calculator']}'></a>", unsafe_allow_html=True) # Anchor
 st.header("📊 Rolling Correlation Calculator")
 st.write("Calculates the rolling correlation between the daily returns of two assets.")
 st.slider("Select Rolling Window (Days):", min_value=config.MIN_ROLLING_WINDOW_CORR, max_value=config.MAX_ROLLING_WINDOW_CORR, value=st.session_state.rolling_window_corr, step=1, key="rolling_window_corr")
@@ -92,6 +114,7 @@ with plot_placeholder_corr.container():
     else: st.info("Select window, enter tickers, and click 'Calculate Correlation'.")
 
 # --- Section 2: Implied Volatility Skew ---
+st.markdown(f"<a name='{sections['IV Skew Viewer']}'></a>", unsafe_allow_html=True) # Anchor
 st.divider(); st.header("📉 Implied Volatility Skew Viewer")
 st.write("Visualizes IV smile/skew. Zero IVs are interpolated.")
 st.session_state.ticker_input_skew = st.text_input("Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget").strip().upper()
@@ -128,6 +151,7 @@ with plot_placeholder_skew.container():
 
 # --- FRED Sections Common UI Elements ---
 def fred_section_ui(section_key_suffix, title, description, series_fetch_logic, plot_function, display_metrics_logic=None, series_select_options=None, default_series_name_key=None, series_id_map=None):
+    st.markdown(f"<a name='{sections[title.split(': ')[0] if ': ' in title else title]}'></a>", unsafe_allow_html=True) # Anchor based on main title part
     st.divider(); st.header(title); st.write(description)
     start_date_key, end_date_key = f"{section_key_suffix}_start_date", f"{section_key_suffix}_end_date"
     show_recession_key = f"{section_key_suffix}_show_recession"
@@ -151,15 +175,8 @@ def fred_section_ui(section_key_suffix, title, description, series_fetch_logic, 
 
     with plot_placeholder.container():
         if st.session_state[calculated_key] and st.session_state.get(data_key) is not None:
-            # For Gold vs RY, we need to pass the specific gold column name derived from yfinance
             yfinance_gold_col_name_for_plotter = st.session_state.get('yfinance_gold_col_name_plotter') if section_key_suffix == "gold_ry" else None
-            
-            fig = plot_function(
-                st.session_state[data_key], 
-                st.session_state[show_recession_key], 
-                section_key_suffix, series_id_map, default_series_name_key,
-                yfinance_gold_col_name_for_plotter # Pass it here
-            )
+            fig = plot_function(st.session_state[data_key], st.session_state[show_recession_key], section_key_suffix, series_id_map, default_series_name_key, yfinance_gold_col_name_for_plotter)
             if fig: st.plotly_chart(fig, use_container_width=True)
             df_to_download = st.session_state.get(data_key)
             if df_to_download is not None and not df_to_download.empty:
@@ -192,7 +209,7 @@ def fetch_single_fred_logic(start_date_key, end_date_key, show_recession_key, da
         st.session_state[data_key] = df if not df.empty else None
         st.session_state[error_key] = err
 
-def plot_single_fred(data_df, show_recession_value, _, __, ___, ____): # Added placeholder for yfinance_gold_col_name
+def plot_single_fred(data_df, show_recession_value, _, __, ___, ____): 
     series_id = st.session_state.fred_series_id_calculated 
     series_data_col = data_df.get(series_id) if data_df is not None and series_id in data_df.columns else None
     recession_series = data_df.get(config.USREC_SERIES_ID) if data_df is not None and show_recession_value else None
@@ -206,10 +223,11 @@ def display_single_fred_metrics(data_df, _):
         if notes and isinstance(notes, str): st.expander("Series Notes").caption(notes)
     elif st.session_state.fred_info_error: st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
 
-if config.fred: fred_section_ui("fred_single", "FRED Economic Data Viewer", "Fetches and displays a single time series from FRED.", fetch_single_fred_logic, plot_single_fred, display_single_fred_metrics, config.fred_series_options, "fred_series_name_input", config.FRED_SERIES_EXAMPLES)
-else: st.divider(); st.header("🏛️ FRED Economic Data Viewer"); st.error(config.fred_error_message)
+if config.fred: fred_section_ui("fred_single", sections["FRED Single Series"], "Fetches and displays a single time series from FRED.", fetch_single_fred_logic, plot_single_fred, display_single_fred_metrics, config.fred_series_options, "fred_series_name_input", config.FRED_SERIES_EXAMPLES)
+else: st.markdown(f"<a name='{sections['FRED Single Series']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["FRED Single Series"]); st.error(config.fred_error_message)
 
 # --- Section 4: Fed's Jaws Chart ---
+st.markdown(f"<a name='{sections['Fed\'s Jaws']}'></a>", unsafe_allow_html=True) # Anchor
 st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates")
 st.write(f"Visualizes key Federal Reserve interest rates over the last **{config.FED_JAWS_DURATION_DAYS} days**.")
 plot_placeholder_jaws = st.empty()
@@ -229,14 +247,14 @@ if config.fred:
                 st.download_button("Download Jaws Data (CSV)", utils.convert_df_to_csv(st.session_state.fed_jaws_data), "fed_jaws_data.csv", "text/csv", key="dl_jaws_csv")
         elif st.session_state.fed_jaws_error and st.session_state.fed_jaws_calculated: pass 
         else: st.info(f"Click 'Fetch/Refresh' for Fed's Jaws chart.")
-else: st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates"); st.error(config.fred_error_message)
+else: st.markdown(f"<a name='{sections['Fed\'s Jaws']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["Fed's Jaws"]); st.error(config.fred_error_message)
 
 # --- Section 5: Fed Funds Rate vs Core PCE ---
 def fetch_ffr_pce_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, *_):
     s_ids = [config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_index"]]
     with st.spinner("Fetching FFR & Core PCE data..."):
         st.session_state[data_key], st.session_state[error_key] = data_fetchers.get_multiple_fred_data(config.fred, s_ids, st.session_state[start_date_key], st.session_state[end_date_key], include_recession_bands=st.session_state[show_recession_key])
-def plot_ffr_pce(data_df, show_recession_value, _, __, ___, ____): # Added placeholder for yfinance_gold_col_name
+def plot_ffr_pce(data_df, show_recession_value, _, __, ___, ____): 
     recession_series = data_df.get(config.USREC_SERIES_ID) if data_df is not None and show_recession_value else None
     return plotters.create_ffr_pce_comparison_plot(data_df, config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_index"], config.FFR_PCE_THRESHOLD, recession_series, show_recession_value)
 def display_ffr_pce_metrics(data_df, _): 
@@ -250,88 +268,48 @@ def display_ffr_pce_metrics(data_df, _):
             st.caption(f"Threshold: {config.FFR_PCE_THRESHOLD}%. Current diff is {'above' if diff > config.FFR_PCE_THRESHOLD else 'at or below'} threshold.")
         else: st.caption("N/A (No overlapping data for metric).")
     else: st.caption("N/A (Data missing for metric).")
-if config.fred: fred_section_ui("ffr_pce", "💰 Fed Funds Rate vs. Core PCE Inflation", f"Visualizes FFR vs Core PCE YoY. Gap colored if FFR - PCE YoY > {config.FFR_PCE_THRESHOLD}%.", fetch_ffr_pce_logic, plot_ffr_pce, display_ffr_pce_metrics)
-else: st.divider(); st.header("💰 Fed Funds Rate vs. Core PCE Inflation"); st.error(config.fred_error_message)
+
+if config.fred: fred_section_ui("ffr_pce", sections["FFR vs Core PCE"], f"Visualizes FFR vs Core PCE YoY. Gap colored if FFR - PCE YoY > {config.FFR_PCE_THRESHOLD}%.", fetch_ffr_pce_logic, plot_ffr_pce, display_ffr_pce_metrics)
+else: st.markdown(f"<a name='{sections['FFR vs Core PCE']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["FFR vs Core PCE"]); st.error(config.fred_error_message)
 
 # --- Section 6: Gold vs. 10Y Real Yield ---
-def fetch_gold_ry_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, *_): # Added section_key_suffix
+def fetch_gold_ry_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, *_): 
     s_start, s_end, show_rec = st.session_state[start_date_key], st.session_state[end_date_key], st.session_state[show_recession_key]
     combined_data = pd.DataFrame()
     current_error = None
-
-    # Fetch Gold from yfinance
     gold_ticker = config.GOLD_YFINANCE_TICKER
-    yfinance_gold_col_name = f"{gold_ticker}_Close" # Define the column name we'll use
-    st.session_state['yfinance_gold_col_name_plotter'] = yfinance_gold_col_name # Store for plotter
-
+    yfinance_gold_col_name = f"{gold_ticker}_Close" 
+    st.session_state['yfinance_gold_col_name_plotter'] = yfinance_gold_col_name 
     try:
-        print(f"Fetching yfinance Gold ({gold_ticker}) from {s_start} to {s_end}")
         gold_data_yf = yf.download(gold_ticker, start=s_start, end=s_end, progress=False)
-        if not gold_data_yf.empty and 'Close' in gold_data_yf.columns:
-            combined_data[yfinance_gold_col_name] = gold_data_yf['Close'] # Use the defined column name
-        else:
-            current_error = f"No Gold data from yfinance for {gold_ticker}. "
-    except Exception as e:
-        current_error = f"Error fetching Gold ({gold_ticker}) from yfinance: {e}. "
-        print(f"yfinance gold fetch error: {e}")
-
-    # Fetch Real Yield from FRED
+        if not gold_data_yf.empty and 'Close' in gold_data_yf.columns: combined_data[yfinance_gold_col_name] = gold_data_yf['Close']
+        else: current_error = f"No Gold data from yfinance for {gold_ticker}. "
+    except Exception as e: current_error = f"Error fetching Gold ({gold_ticker}) from yfinance: {e}. "; print(f"yfinance gold fetch error: {e}")
     real_yield_id = config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]
     ry_data, ry_err = data_fetchers.get_fred_data(config.fred, real_yield_id, s_start, s_end)
-    if ry_data is not None:
-        combined_data[real_yield_id] = ry_data
-    if ry_err:
-        current_error = (current_error or "") + f"Real Yield Error: {ry_err}. "
-
-    # Fetch Recession Data if requested
+    if ry_data is not None: combined_data[real_yield_id] = ry_data
+    if ry_err: current_error = (current_error or "") + f"Real Yield Error: {ry_err}. "
     if show_rec:
         rec_data, rec_err = data_fetchers.get_fred_data(config.fred, config.USREC_SERIES_ID, s_start, s_end)
-        if rec_data is not None:
-            combined_data[config.USREC_SERIES_ID] = rec_data
-        if rec_err:
-            current_error = (current_error or "") + f"Recession Data Error: {rec_err}. "
-    
-    # Combine and ffill
+        if rec_data is not None: combined_data[config.USREC_SERIES_ID] = rec_data
+        if rec_err: current_error = (current_error or "") + f"Recession Data Error: {rec_err}. "
     if not combined_data.empty:
-        # Ensure index is DatetimeIndex for proper alignment if sources differ slightly
-        combined_data.index = pd.to_datetime(combined_data.index)
-        # Reindex with a full date range and then ffill, then bfill
-        # This ensures all series are on the same daily frequency for plotting if one is sparser
         if not combined_data.index.empty:
-            full_date_range = pd.date_range(start=combined_data.index.min(), end=combined_data.index.max(), freq='B') # Business day frequency
-            combined_data = combined_data.reindex(full_date_range)
-            combined_data.ffill(inplace=True)
-            combined_data.bfill(inplace=True) # Backfill for leading NaNs
-            st.session_state[data_key] = combined_data.dropna(how='all') # Drop rows if all are NaN after ffill/bfill
-        else:
-            st.session_state[data_key] = None # No data to process
-            current_error = (current_error or "") + "Combined data index was empty."
-    else:
-        st.session_state[data_key] = None
-        current_error = (current_error or "") + "No data fetched for Gold vs Real Yield."
-
+            full_date_range = pd.date_range(start=combined_data.index.min(), end=combined_data.index.max(), freq='B') 
+            combined_data = combined_data.reindex(full_date_range); combined_data.ffill(inplace=True); combined_data.bfill(inplace=True) 
+            st.session_state[data_key] = combined_data.dropna(how='all') 
+        else: st.session_state[data_key] = None; current_error = (current_error or "") + "Combined data index was empty."
+    else: st.session_state[data_key] = None; current_error = (current_error or "") + "No data fetched for Gold vs Real Yield."
     st.session_state[error_key] = current_error.strip() if current_error else None
 
-
-def plot_gold_ry(data_df, show_recession_value, _, __, ___, yfinance_gold_col_name_for_plotter): # Added yfinance_gold_col_name
+def plot_gold_ry(data_df, show_recession_value, _, __, ___, yfinance_gold_col_name_for_plotter): 
     recession_series = data_df.get(config.USREC_SERIES_ID) if data_df is not None and show_recession_value else None
-    # Use the yfinance_gold_col_name passed from session state via fred_section_ui
-    actual_gold_col_name = yfinance_gold_col_name_for_plotter if yfinance_gold_col_name_for_plotter else config.GOLD_YFINANCE_TICKER + "_Close" # Fallback
-    
-    return plotters.create_gold_vs_real_yield_plot(
-        data_df, 
-        yfinance_gold_col_name=actual_gold_col_name, # Pass the correct gold column name
-        fred_real_yield_col_name=config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"], 
-        recession_data_series=recession_series, 
-        show_recession_bands=show_recession_value
-    )
-
+    actual_gold_col_name = yfinance_gold_col_name_for_plotter if yfinance_gold_col_name_for_plotter else config.GOLD_YFINANCE_TICKER + "_Close" 
+    return plotters.create_gold_vs_real_yield_plot(data_df, actual_gold_col_name, config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"], recession_series, show_recession_value)
 def display_gold_ry_metrics(data_df, _): 
     if data_df is not None:
-        # Gold column name is now dynamic based on yfinance ticker + "_Close"
         gold_col_name = st.session_state.get('yfinance_gold_col_name_plotter', config.GOLD_YFINANCE_TICKER + "_Close")
         ry_id = config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]
-        
         latest_g = data_df[gold_col_name].dropna().iloc[-1] if gold_col_name in data_df.columns and not data_df[gold_col_name].dropna().empty else "N/A"
         latest_ry = data_df[ry_id].dropna().iloc[-1] if ry_id in data_df.columns and not data_df[ry_id].dropna().empty else "N/A"
         c1, c2 = st.columns(2)
@@ -339,18 +317,14 @@ def display_gold_ry_metrics(data_df, _):
         c2.metric("Latest 10Y Real Yield", f"{latest_ry:.2f}%" if isinstance(latest_ry, (float,int)) else latest_ry)
     else: st.caption("N/A (Data missing for metric).")
 
-if config.fred: 
-    fred_section_ui(
-        "gold_ry", "🪙 Gold vs. 10Y Real Yield", 
-        f"Plots Gold Price ({config.GOLD_YFINANCE_TICKER} from yfinance) against the 10-Year Treasury Inflation-Indexed Security yield (FRED).", 
-        fetch_gold_ry_logic, plot_gold_ry, display_gold_ry_metrics
-    )
-else: st.divider(); st.header("🪙 Gold vs. 10Y Real Yield"); st.error(config.fred_error_message)
-
+if config.fred: fred_section_ui("gold_ry", sections["Gold vs Real Yield"], f"Plots Gold Price ({config.GOLD_YFINANCE_TICKER} from yfinance) against the 10-Year Treasury Inflation-Indexed Security yield (FRED).", fetch_gold_ry_logic, plot_gold_ry, display_gold_ry_metrics)
+else: st.markdown(f"<a name='{sections['Gold vs Real Yield']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["Gold vs Real Yield"]); st.error(config.fred_error_message)
 
 # --- Ticker Reference Table & Footer ---
+st.markdown(f"<a name='{sections['Ticker Reference']}'></a>", unsafe_allow_html=True) # Anchor
 st.divider()
-with st.expander("Show Example Ticker Symbols (Yahoo Finance)"): st.dataframe(config.ticker_df, use_container_width=True, hide_index=True, column_config={"Asset Class": st.column_config.TextColumn("Asset Class"), "Description": st.column_config.TextColumn("Description"), "Yahoo Ticker": st.column_config.TextColumn("Yahoo Ticker")})
+with st.expander("Show Example Ticker Symbols (Yahoo Finance)"): 
+    st.dataframe(config.ticker_df, use_container_width=True, hide_index=True, column_config={"Asset Class": st.column_config.TextColumn("Asset Class"), "Description": st.column_config.TextColumn("Description"), "Yahoo Ticker": st.column_config.TextColumn("Yahoo Ticker")})
 st.divider(); st.markdown(utils.generate_footer_html(config.YOUR_NAME, config.LINKEDIN_URL, config.LINKEDIN_SVG), unsafe_allow_html=True)
 st.caption("Market data from Yahoo Finance (yfinance). Economic data from FRED® (fredapi). Data may be delayed.")
 

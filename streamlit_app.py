@@ -8,7 +8,9 @@ import yfinance as yf
 import config, data_fetchers, plotters, utils
 
 st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide")
-st.title("📊 Macro/Quantamental Dashboard")
+# st.title("📊 Macro/Quantamental Dashboard") # Old title
+st.markdown("<h1 style='text-align: center; color: white;'>📊 Macro/Quantamental Dashboard</h1>", unsafe_allow_html=True) # Centered Title
+
 
 # --- Tab Navigation ---
 # Define section titles and their corresponding anchor IDs

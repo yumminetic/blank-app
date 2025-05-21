@@ -5,13 +5,20 @@ import numpy as np
 import config 
 
 def add_recession_bands_to_fig(fig, recession_data_series): 
+    """Adds recession bands to a Plotly figure if recession_data_series is provided and valid."""
     if recession_data_series is None or recession_data_series.empty or not isinstance(recession_data_series, pd.Series):
-        print("Debug: add_recession_bands_to_fig received invalid or empty recession_data_series.")
+        # print("Debug: add_recession_bands_to_fig received invalid or empty recession_data_series.")
         return
+
     recession_data_series.index = pd.to_datetime(recession_data_series.index)
     in_recession_periods = recession_data_series[recession_data_series == 1]
-    if in_recession_periods.empty: return
-    start_date = None; processed_end_dates = set()
+    
+    if in_recession_periods.empty:
+        return
+
+    start_date = None
+    processed_end_dates = set() 
+
     for date_index, _ in in_recession_periods.items():
         if start_date is None: start_date = date_index
         current_loc = recession_data_series.index.get_loc(date_index)
@@ -23,11 +30,11 @@ def add_recession_bands_to_fig(fig, recession_data_series):
         if is_last_point or next_is_not_recession:
             end_date = date_index 
             if end_date not in processed_end_dates:
-                actual_end_date = end_date + pd.DateOffset(days=1) if end_date == start_date else end_date # Ensure vrect has width for single month
+                actual_end_date = end_date + pd.DateOffset(days=1) if end_date == start_date else end_date
                 fig.add_vrect(x0=start_date, x1=actual_end_date, fillcolor="rgba(128,128,128,0.2)", layer="below", line_width=0, name="NBER Recession" if not any(trace.name == "NBER Recession" for trace in fig.data) else None, showlegend=not any(trace.name == "NBER Recession" for trace in fig.data))
                 processed_end_dates.add(end_date)
             start_date = None 
-    if start_date is not None and start_date not in processed_end_dates and not in_recession_periods.empty: # Handle recession at the very end
+    if start_date is not None and start_date not in processed_end_dates and not in_recession_periods.empty: 
         end_date = in_recession_periods.index[-1]
         if end_date not in processed_end_dates:
             actual_end_date = end_date + pd.DateOffset(days=1) if end_date == start_date else end_date
@@ -41,10 +48,10 @@ def create_corr_plot(rolling_corr_data, ticker1, ticker2, window, years=config.Y
         fig.add_trace(go.Scatter(x=pos_corr.index, y=pos_corr, mode='lines', name='Positive Correlation', line=dict(color='green')))
         fig.add_trace(go.Scatter(x=neg_corr.index, y=neg_corr, mode='lines', name='Negative Correlation', line=dict(color='red')))
     elif rolling_corr_data is not None and rolling_corr_data.empty: 
-        plot_title += " (No data for window)" # Append to title if data was empty for window
+        plot_title += " (No data for window)" 
         fig.add_annotation(text=f"No correlation data for {ticker1}/{ticker2} ({window}-day window).", showarrow=False, align='center')
     else: 
-        plot_title += " (Error)" # Append to title on error
+        plot_title += " (Error)" 
         fig.add_annotation(text=f"Could not load correlation data for {ticker1}/{ticker2}.", showarrow=False, align='center')
     fig.update_layout(title=plot_title, xaxis_title='Date', yaxis_title='Correlation Coefficient', yaxis_range=[-1, 1], height=500, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
     return fig
@@ -138,12 +145,23 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
 
 def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yield_col_name, recession_data_series=None, show_recession_bands=False): 
     fig = go.Figure(); plot_title = "Gold Price vs. 10-Year Real Yield"
+    
+    # --- DEBUG PRINT ---
+    print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received yfinance_gold_col_name = '{yfinance_gold_col_name}'")
+    print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received fred_real_yield_col_name = '{fred_real_yield_col_name}'")
+    if data_df is not None:
+        print(f"PLOTTER DEBUG: data_df columns received by plotter: {list(data_df.columns)}")
+    else:
+        print("PLOTTER DEBUG: data_df is None when received by plotter.")
+    # --- END DEBUG PRINT ---
+
     if data_df is None or data_df.empty:
         fig.update_layout(title=plot_title, annotations=[dict(text="No data for Gold vs Real Yield plot.", showarrow=False, align='center')]); return fig
     
     plot_df = data_df.copy()
-    # Check if the specific yfinance gold column (e.g., 'GLD_Close') and FRED real yield column exist
+    
     if yfinance_gold_col_name not in plot_df.columns:
+        # This is where the error in the screenshot originates
         fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing Gold data column: '{yfinance_gold_col_name}'. Available: {list(plot_df.columns)}", showarrow=False, align='center')]); return fig
     if fred_real_yield_col_name not in plot_df.columns:
         fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing Real Yield data column: '{fred_real_yield_col_name}'. Available: {list(plot_df.columns)}", showarrow=False, align='center')]); return fig

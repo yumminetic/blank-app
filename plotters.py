@@ -5,14 +5,14 @@ Uses Plotly for creating interactive charts.
 """
 import plotly.graph_objects as go
 import pandas as pd
-import numpy as np # For isinstance checks with numeric types
+import numpy as np 
 
-# Import constants from config
-import config
+import config # Assuming config.py is in the same directory
 
-def create_corr_plot(rolling_corr_data, ticker1, ticker2, window=config.ROLLING_WINDOW, years=config.YEARS_OF_DATA):
+def create_corr_plot(rolling_corr_data, ticker1, ticker2, window, years=config.YEARS_OF_DATA_CORR): # window is now passed directly
     """Creates the Plotly figure for visualizing rolling correlation."""
     fig = go.Figure()
+    # Use the passed 'window' for the plot title
     plot_title = f"{ticker1} vs {ticker2} - {window}-Day Rolling Correlation ({years} Years)"
 
     if rolling_corr_data is not None and not rolling_corr_data.empty:
@@ -37,63 +37,105 @@ def create_corr_plot(rolling_corr_data, ticker1, ticker2, window=config.ROLLING_
             height=500,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
-    elif rolling_corr_data is not None and rolling_corr_data.empty:
-        error_message = f"No correlation data available for {ticker1} / {ticker2} with the selected parameters."
+    elif rolling_corr_data is not None and rolling_corr_data.empty: # Data was fetched but was empty (e.g. not enough points for window)
+        error_message = f"No correlation data available for {ticker1} / {ticker2} with {window}-day window."
         fig.update_layout(annotations=[dict(text=error_message, showarrow=False, align='center')])
-    else:
+    else: # rolling_corr_data is None (error during calculation or data fetching)
         error_message = f"Could not load or process correlation data for {ticker1} / {ticker2}."
         fig.update_layout(annotations=[dict(text=error_message, showarrow=False, align='center')])
 
+    # Ensure basic layout is set even if there's no data or an error
     if rolling_corr_data is None or rolling_corr_data.empty:
          fig.update_layout(
-            title=plot_title, 
+            title=plot_title, # Keep title consistent
             xaxis_title='Date',
             yaxis_title='Correlation Coefficient',
-            yaxis_range=[-1, 1], 
+            yaxis_range=[-1, 1], # Keep y-axis range consistent
             height=500
          )
     return fig
 
+def interpolate_iv(df_options):
+    """Interpolates zero IV values in an options DataFrame if they have valid neighbors."""
+    if df_options is None or df_options.empty or 'strike' not in df_options.columns or 'impliedVolatility' not in df_options.columns:
+        return df_options # Return original if no data or critical columns missing
+    
+    df_interpolated = df_options.copy()
+    # Ensure 'strike' and 'impliedVolatility' are numeric
+    df_interpolated['strike'] = pd.to_numeric(df_interpolated['strike'], errors='coerce')
+    df_interpolated['impliedVolatility'] = pd.to_numeric(df_interpolated['impliedVolatility'], errors='coerce')
+    
+    # Drop rows if strike itself is NaN after coercion, as we can't sort or interpolate them
+    df_interpolated.dropna(subset=['strike'], inplace=True)
+    if df_interpolated.empty:
+        return df_interpolated # Return if no valid strikes
+
+    # Sort by strike for correct interpolation
+    df_interpolated.sort_values(by='strike', inplace=True)
+    
+    # Replace 0 IVs with NaN to enable pandas interpolation.
+    # We only want to interpolate actual zeros, not existing NaNs.
+    # Create a temporary column for this to avoid altering original NaNs.
+    df_interpolated['iv_for_interpolation'] = df_interpolated['impliedVolatility'].copy()
+    df_interpolated.loc[df_interpolated['iv_for_interpolation'] == 0, 'iv_for_interpolation'] = np.nan
+    
+    # Interpolate NaNs (which were originally zeros)
+    # 'linear' is a common choice. 'limit_direction'='both' helps fill NaNs at ends if possible.
+    # 'limit_area'='inside' ensures we don't extrapolate beyond the original data range of non-NaNs.
+    df_interpolated['iv_interpolated_values'] = df_interpolated['iv_for_interpolation'].interpolate(
+        method='linear', limit_direction='both', limit_area='inside'
+    )
+
+    # Update the 'impliedVolatility' column:
+    # Use the interpolated value ONLY if the original IV was exactly 0 AND the interpolation yielded a valid (non-NaN) number.
+    # Otherwise, keep the original 'impliedVolatility' value (which could be non-zero, or an original NaN).
+    df_interpolated['impliedVolatility'] = np.where(
+        (df_options['impliedVolatility'] == 0) & (df_interpolated['iv_interpolated_values'].notna()), # Check original df for == 0
+        df_interpolated['iv_interpolated_values'],
+        df_interpolated['impliedVolatility'] # Fallback to (potentially already cleaned) original IV
+    )
+    
+    # Clean up temporary columns
+    df_interpolated.drop(columns=['iv_for_interpolation', 'iv_interpolated_values'], inplace=True, errors='ignore')
+    
+    # Final drop of any rows where 'impliedVolatility' is now NaN after all processing,
+    # but ensure 'strike' is still valid.
+    df_interpolated.dropna(subset=['strike', 'impliedVolatility'], inplace=True)
+    
+    return df_interpolated
+
 def create_iv_skew_plot(calls_df, puts_df, ticker, expiry_date, current_price):
-    """Creates the Plotly figure for Implied Volatility Skew."""
+    """Creates the Plotly figure for Implied Volatility Skew with interpolation for zero IVs."""
     fig = go.Figure()
     plot_title = f"{ticker} Implied Volatility Skew (Expiry: {expiry_date})"
     data_plotted = False 
 
-    if calls_df is not None and not calls_df.empty and 'strike' in calls_df.columns and 'impliedVolatility' in calls_df.columns:
-        calls_df_cleaned = calls_df.copy()
-        calls_df_cleaned['strike'] = pd.to_numeric(calls_df_cleaned['strike'], errors='coerce')
-        calls_df_cleaned['impliedVolatility'] = pd.to_numeric(calls_df_cleaned['impliedVolatility'], errors='coerce')
-        calls_df_cleaned.dropna(subset=['strike', 'impliedVolatility'], inplace=True)
+    # Interpolate IV for calls and puts if data exists
+    # The interpolate_iv function handles numeric conversion and NaN dropping internally
+    calls_df_processed = interpolate_iv(calls_df)
+    puts_df_processed = interpolate_iv(puts_df)
 
-        if not calls_df_cleaned.empty:
-            fig.add_trace(go.Scatter(
-                x=calls_df_cleaned['strike'],
-                y=calls_df_cleaned['impliedVolatility'] * 100, 
-                mode='markers+lines',
-                name='Calls IV (%)',
-                marker=dict(color='blue'),
-                line=dict(color='blue')
-            ))
-            data_plotted = True
+    # Plot Calls IV if data is available and valid after processing
+    if calls_df_processed is not None and not calls_df_processed.empty:
+        fig.add_trace(go.Scatter(
+            x=calls_df_processed['strike'],
+            y=calls_df_processed['impliedVolatility'] * 100, # Convert IV to percentage
+            mode='markers+lines', name='Calls IV (%)',
+            marker=dict(color='blue'), line=dict(color='blue')
+        ))
+        data_plotted = True
 
-    if puts_df is not None and not puts_df.empty and 'strike' in puts_df.columns and 'impliedVolatility' in puts_df.columns:
-        puts_df_cleaned = puts_df.copy()
-        puts_df_cleaned['strike'] = pd.to_numeric(puts_df_cleaned['strike'], errors='coerce')
-        puts_df_cleaned['impliedVolatility'] = pd.to_numeric(puts_df_cleaned['impliedVolatility'], errors='coerce')
-        puts_df_cleaned.dropna(subset=['strike', 'impliedVolatility'], inplace=True)
+    # Plot Puts IV if data is available and valid after processing
+    if puts_df_processed is not None and not puts_df_processed.empty:
+        fig.add_trace(go.Scatter(
+            x=puts_df_processed['strike'],
+            y=puts_df_processed['impliedVolatility'] * 100, # Convert IV to percentage
+            mode='markers+lines', name='Puts IV (%)',
+            marker=dict(color='orange'), line=dict(color='orange')
+        ))
+        data_plotted = True
 
-        if not puts_df_cleaned.empty:
-            fig.add_trace(go.Scatter(
-                x=puts_df_cleaned['strike'],
-                y=puts_df_cleaned['impliedVolatility'] * 100, 
-                mode='markers+lines',
-                name='Puts IV (%)',
-                marker=dict(color='orange'),
-                line=dict(color='orange')
-            ))
-            data_plotted = True
-
+    # Configure plot layout
     fig.update_layout(
         title=plot_title,
         xaxis_title='Strike Price',
@@ -102,20 +144,19 @@ def create_iv_skew_plot(calls_df, puts_df, ticker, expiry_date, current_price):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
+    # Add a vertical line for the current stock price if available
     if current_price is not None and isinstance(current_price, (int, float, np.number)): 
         fig.add_vline(
-            x=current_price,
-            line_width=1,
-            line_dash="dash",
-            line_color="grey",
-            annotation_text=f"Current Price: {current_price:.2f}",
-            annotation_position="top right"
+            x=current_price, line_width=1, line_dash="dash", line_color="grey",
+            annotation_text=f"Current Price: {current_price:.2f}", annotation_position="top right"
         )
 
+    # If no valid data was plotted, display a message on the chart
     if not data_plotted:
-        error_message = f"No valid options IV data found for {ticker} expiring {expiry_date}."
+        error_message = f"No valid options IV data found for {ticker} expiring {expiry_date} after processing."
         fig.add_annotation(text=error_message, showarrow=False, align='center')
-        fig.update_layout(yaxis_range=[0, 100]) 
+        # Set a default y-axis range if no data, otherwise it might be empty
+        fig.update_layout(yaxis_range=[0, 100]) # Example range, adjust as needed
 
     return fig
 
@@ -213,20 +254,17 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
 
     plot_df = data_df.copy()
 
-    # Ensure the source columns for FFR and PCE Index exist
     if ffr_series_id not in plot_df.columns or pce_index_series_id not in plot_df.columns:
         missing_cols = []
         if ffr_series_id not in plot_df.columns: missing_cols.append(ffr_series_id)
-        if pce_index_series_id not in plot_df.columns: missing_cols.append(pce_index_series_id) # This should be PCEPILFE
+        if pce_index_series_id not in plot_df.columns: missing_cols.append(pce_index_series_id) 
         fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing source data columns: {', '.join(missing_cols)}", showarrow=False, align='center')])
         return fig
 
-    # Calculate Year-over-Year for PCE Index
     plot_df.sort_index(inplace=True)
-    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' # Internal column name
+    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' 
     plot_df[pce_yoy_calculated_col_name] = plot_df[pce_index_series_id].pct_change(periods=12) * 100
     
-    # Drop rows where FFR or the *calculated* PCE YoY is NaN
     plot_df.dropna(subset=[ffr_series_id, pce_yoy_calculated_col_name], inplace=True)
 
     if plot_df.empty:
@@ -237,7 +275,6 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
     pce_rate_yoy = plot_df[pce_yoy_calculated_col_name] 
     difference = ffr_rate - pce_rate_yoy
 
-    # Plot the main lines
     fig.add_trace(go.Scatter(
         x=plot_df.index, y=ffr_rate, mode='lines', name=config.FFR_VS_PCE_NAMES.get("ffr", ffr_series_id),
         line=dict(color='blue', width=2)

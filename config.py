@@ -9,8 +9,11 @@ from fredapi import Fred # Import FRED API library
 from datetime import timedelta # For FED_JAWS_DURATION_DAYS
 
 # --- General App Configuration ---
-ROLLING_WINDOW = 30
-YEARS_OF_DATA = 10  # For correlation data fetching
+DEFAULT_ROLLING_WINDOW_CORR = 30 # Default for the new slider
+MIN_ROLLING_WINDOW_CORR = 1
+MAX_ROLLING_WINDOW_CORR = 250
+YEARS_OF_DATA_CORR = 10  # For correlation data fetching
+
 FED_JAWS_DURATION_DAYS = 120 # Approx 4 months, for Fed Jaws chart
 FFR_PCE_THRESHOLD = 2.0 # Threshold for FFR vs PCE difference in percentage points
 
@@ -117,11 +120,9 @@ FED_JAWS_SERIES_IDS = [
 ]
 
 # --- FRED Series IDs for Fed Funds Rate vs Core PCE Chart ---
-# Effective Federal Funds Rate (Monthly)
-# Personal Consumption Expenditures Excluding Food and Energy (Chain-Type Price Index), Monthly
 FFR_VS_PCE_SERIES_IDS = {
     "ffr": "FEDFUNDS",
-    "core_pce_index": "PCEPILFE" # CRITICAL: This must be PCEPILFE (the index)
+    "core_pce_index": "PCEPILFE" 
 }
 FFR_VS_PCE_NAMES = {
     "ffr": "Effective Federal Funds Rate (Monthly)",
@@ -134,3 +135,4 @@ FFR_VS_PCE_NAMES = {
 LINKEDIN_URL = "https://www.linkedin.com/in/kennethquah/"
 YOUR_NAME = "Kenneth Quah"
 LINKEDIN_SVG = """<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#0077B5" style="vertical-align: middle;"><title>LinkedIn</title><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>"""
+

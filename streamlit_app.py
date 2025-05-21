@@ -1,25 +1,24 @@
 # streamlit_app.py
 """
-Main Streamlit application file for the Financial Dashboard.
+Main Streamlit application file for the Macro/Quantamental Dashboard.
 Handles UI, state management, and orchestrates calls to other modules.
 """
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import traceback # For detailed error printing if needed directly in UI logic
+import traceback 
 
-# Import from custom modules
-import config
-import data_fetchers
-import plotters
-import utils
+import config # Assuming config.py is in the same directory
+import data_fetchers # Assuming data_fetchers.py is in the same directory
+import plotters # Assuming plotters.py is in the same directory
+import utils # Assuming utils.py is in the same directory
 
 # --- Streamlit App ---
-st.set_page_config(page_title="Financial Dashboard", layout="wide")
-st.title("📈 Financial Dashboard")
+st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide") # Updated page title
+st.title("📊 Macro/Quantamental Dashboard") # Updated main title
 
-# --- Initialize Session State using utility function ---
+# --- Initialize Session State ---
 # Correlation State
 utils.init_state('rolling_corr_data', None)
 utils.init_state('rolling_corr_error', None) 
@@ -27,6 +26,8 @@ utils.init_state('ticker1_calculated_corr', None)
 utils.init_state('ticker2_calculated_corr', None)
 utils.init_state('ticker1_input_corr', config.DEFAULT_TICKER_1_CORR)
 utils.init_state('ticker2_input_corr', config.DEFAULT_TICKER_2_CORR)
+utils.init_state('rolling_window_corr', config.DEFAULT_ROLLING_WINDOW_CORR) # For the slider
+utils.init_state('corr_window_calculated', config.DEFAULT_ROLLING_WINDOW_CORR) # To store the window used for the last plot
 
 # Skew State
 utils.init_state('calls_data_skew', None)
@@ -62,6 +63,18 @@ utils.init_state('current_ffr_pce_diff', None)
 # --- Section 1: Rolling Correlation ---
 st.header("📊 Rolling Correlation Calculator")
 st.write("Calculates the rolling correlation between the daily returns of two assets.")
+
+# Input for rolling window
+# The value from the slider is automatically stored in st.session_state.rolling_window_corr due to the key
+st.slider(
+    "Select Rolling Window (Days):",
+    min_value=config.MIN_ROLLING_WINDOW_CORR,
+    max_value=config.MAX_ROLLING_WINDOW_CORR,
+    value=st.session_state.rolling_window_corr, 
+    step=1,
+    key="rolling_window_corr" # This key links the slider to st.session_state.rolling_window_corr
+)
+
 col1_corr, col2_corr = st.columns(2)
 with col1_corr:
     ticker1_input_val_corr = st.text_input(
@@ -83,20 +96,24 @@ plot_placeholder_corr = st.empty()
 if calculate_corr_button:
     t1_corr = st.session_state.ticker1_input_corr
     t2_corr = st.session_state.ticker2_input_corr
+    selected_rolling_window = st.session_state.rolling_window_corr # Get current window from slider state
+
     st.session_state.rolling_corr_data = None 
     st.session_state.rolling_corr_error = None 
     st.session_state.ticker1_calculated_corr = t1_corr 
     st.session_state.ticker2_calculated_corr = t2_corr
+    st.session_state.corr_window_calculated = selected_rolling_window # Store the window used for this specific calculation
+
 
     if t1_corr and t2_corr:
         if t1_corr == t2_corr:
             st.warning("Please enter two different ticker symbols.")
-            st.session_state.ticker1_calculated_corr = None
+            st.session_state.ticker1_calculated_corr = None # Clear if invalid for plot
             st.session_state.ticker2_calculated_corr = None
         else:
-            with st.spinner(f"Calculating {config.ROLLING_WINDOW}-day rolling correlation for {t1_corr} vs {t2_corr}..."):
+            with st.spinner(f"Calculating {selected_rolling_window}-day rolling correlation for {t1_corr} vs {t2_corr}..."):
                 result_corr, error_msg_corr = data_fetchers.calculate_rolling_correlation(
-                    t1_corr, t2_corr, window=config.ROLLING_WINDOW, years=config.YEARS_OF_DATA
+                    t1_corr, t2_corr, window=selected_rolling_window, years=config.YEARS_OF_DATA_CORR
                 )
                 st.session_state.rolling_corr_data = result_corr
                 st.session_state.rolling_corr_error = error_msg_corr
@@ -111,23 +128,25 @@ if calculate_corr_button:
 
 with plot_placeholder_corr.container(): 
     if st.session_state.get('ticker1_calculated_corr') and st.session_state.get('ticker2_calculated_corr'):
+        # Plot if no error during fetch, or if data exists despite a warning (partial fetch)
         if not st.session_state.rolling_corr_error or st.session_state.rolling_corr_data is not None: 
             fig_corr = plotters.create_corr_plot(
                 st.session_state.rolling_corr_data,
                 st.session_state.ticker1_calculated_corr,
                 st.session_state.ticker2_calculated_corr,
-                window=config.ROLLING_WINDOW,
-                years=config.YEARS_OF_DATA
+                window=st.session_state.corr_window_calculated, # Use the window that was actually used for calculation
+                years=config.YEARS_OF_DATA_CORR
             )
             st.plotly_chart(fig_corr, use_container_width=True)
-    else:
-        st.info("Enter two ticker symbols and click 'Calculate Correlation' to view the rolling correlation plot.")
+        # If there was an error and no data, the error message is already shown by the button logic above.
+    else: # Initial state or after invalid input
+        st.info("Select a rolling window, enter two ticker symbols, and click 'Calculate Correlation'.")
 
 
 # --- Section 2: Implied Volatility Skew ---
 st.divider()
 st.header("📉 Implied Volatility Skew Viewer")
-st.write("Visualizes the Implied Volatility (IV) smile/skew for options of a selected equity or ETF.")
+st.write("Visualizes the Implied Volatility (IV) smile/skew for options of a selected equity or ETF. Zero IV values are interpolated for smoother visualization.")
 
 ticker_input_val_skew = st.text_input(
     "Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget",
@@ -212,6 +231,7 @@ with plot_placeholder_skew.container():
     if st.session_state.get('ticker_calculated_skew') and st.session_state.get('expiry_calculated_skew'):
         if not st.session_state.skew_error or \
            (st.session_state.calls_data_skew is not None or st.session_state.puts_data_skew is not None):
+            # The create_iv_skew_plot function now handles interpolation internally
             fig_skew = plotters.create_iv_skew_plot(
                 st.session_state.calls_data_skew, st.session_state.puts_data_skew,
                 st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew,
@@ -384,7 +404,7 @@ else:
                 
                 if ffr_col_name in temp_df_ffr_pce.columns and pce_index_col_name in temp_df_ffr_pce.columns:
                     temp_df_ffr_pce.sort_index(inplace=True) 
-                    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' # Define temp name
+                    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' 
                     temp_df_ffr_pce[pce_yoy_calculated_col_name] = temp_df_ffr_pce[pce_index_col_name].pct_change(periods=12) * 100
                     
                     temp_df_ffr_pce.dropna(subset=[ffr_col_name, pce_yoy_calculated_col_name], inplace=True)
@@ -398,8 +418,8 @@ else:
                 else:
                     missing_cols_str = []
                     if ffr_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(ffr_col_name)
-                    if pce_index_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(pce_index_col_name) # This should be PCEPILFE
-                    st.session_state.current_ffr_pce_diff = f"N/A (Missing source columns: {', '.join(missing_cols_str)})" # Error should show PCEPILFE if it's missing
+                    if pce_index_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(pce_index_col_name) 
+                    st.session_state.current_ffr_pce_diff = f"N/A (Missing source columns: {', '.join(missing_cols_str)})" 
             elif not error_msg_ffr_pce: 
                  st.session_state.current_ffr_pce_diff = "N/A (Source data series empty)"
 

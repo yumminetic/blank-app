@@ -146,14 +146,10 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
 def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yield_col_name, recession_data_series=None, show_recession_bands=False): 
     fig = go.Figure(); plot_title = "Gold Price vs. 10-Year Real Yield"
     
-    # --- DEBUG PRINT ---
-    print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received yfinance_gold_col_name = '{yfinance_gold_col_name}'")
-    print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received fred_real_yield_col_name = '{fred_real_yield_col_name}'")
-    if data_df is not None:
-        print(f"PLOTTER DEBUG: data_df columns received by plotter: {list(data_df.columns)}")
-    else:
-        print("PLOTTER DEBUG: data_df is None when received by plotter.")
-    # --- END DEBUG PRINT ---
+    # print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received yfinance_gold_col_name = '{yfinance_gold_col_name}'")
+    # print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received fred_real_yield_col_name = '{fred_real_yield_col_name}'")
+    # if data_df is not None: print(f"PLOTTER DEBUG: data_df columns received by plotter: {list(data_df.columns)}")
+    # else: print("PLOTTER DEBUG: data_df is None when received by plotter.")
 
     if data_df is None or data_df.empty:
         fig.update_layout(title=plot_title, annotations=[dict(text="No data for Gold vs Real Yield plot.", showarrow=False, align='center')]); return fig
@@ -161,7 +157,6 @@ def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yi
     plot_df = data_df.copy()
     
     if yfinance_gold_col_name not in plot_df.columns:
-        # This is where the error in the screenshot originates
         fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing Gold data column: '{yfinance_gold_col_name}'. Available: {list(plot_df.columns)}", showarrow=False, align='center')]); return fig
     if fred_real_yield_col_name not in plot_df.columns:
         fig.update_layout(title=plot_title, annotations=[dict(text=f"Missing Real Yield data column: '{fred_real_yield_col_name}'. Available: {list(plot_df.columns)}", showarrow=False, align='center')]); return fig
@@ -177,9 +172,21 @@ def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yi
         add_recession_bands_to_fig(fig, recession_data_series)
         
     fig.update_layout(
-        title=plot_title, xaxis_title='Date', height=600,
-        yaxis=dict(title=config.GOLD_VS_REAL_YIELD_NAMES.get("gold_yfinance"), titlefont=dict(color="gold"), tickfont=dict(color="gold")),
-        yaxis2=dict(title=config.GOLD_VS_REAL_YIELD_NAMES.get("real_yield_10y"), titlefont=dict(color="green"), tickfont=dict(color="green"), overlaying="y", side="right"),
+        title=plot_title, 
+        xaxis_title='Date', 
+        height=600,
+        yaxis=dict(
+            title_text=config.GOLD_VS_REAL_YIELD_NAMES.get("gold_yfinance"), # Use title_text for the title string
+            titlefont=dict(color="gold"), # Correct way to set title font color
+            tickfont=dict(color="gold")
+        ),
+        yaxis2=dict(
+            title_text=config.GOLD_VS_REAL_YIELD_NAMES.get("real_yield_10y"), # Use title_text
+            titlefont=dict(color="green"), # Correct way to set title font color
+            tickfont=dict(color="green"), 
+            overlaying="y", 
+            side="right"
+        ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     return fig

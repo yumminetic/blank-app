@@ -9,29 +9,28 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import traceback
 import numpy as np
-# No direct fredapi import here, the 'fred' object is passed in
 
 # Import constants from config
-from config import ROLLING_WINDOW, YEARS_OF_DATA # Used by calculate_rolling_correlation
+# ROLLING_WINDOW is no longer imported directly here for default, it's passed as an argument.
+# YEARS_OF_DATA was renamed to YEARS_OF_DATA_CORR in config.py
+import config # Import the whole module to access its attributes like config.YEARS_OF_DATA_CORR
 
 @st.cache_data
-def calculate_rolling_correlation(ticker1, ticker2, window=ROLLING_WINDOW, years=YEARS_OF_DATA):
+def calculate_rolling_correlation(ticker1, ticker2, window, years=config.YEARS_OF_DATA_CORR): # window is now a required argument
     """Calculates rolling correlation (uses yfinance)."""
-    print(f"Executing: calculate_rolling_correlation for {ticker1} vs {ticker2}...")
+    print(f"Executing: calculate_rolling_correlation for {ticker1} vs {ticker2} with window {window}...")
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=years*365 + window + 50) # Buffer
+    # Buffer needs to account for the passed 'window'
+    start_date = end_date - timedelta(days=years*365 + window + 50) 
     try:
-        data = yf.download([ticker1, ticker2], start=start_date, end=end_date)['Close']
+        data = yf.download([ticker1, ticker2], start=start_date, end=end_date, progress=False)
         if data is None or data.empty:
-            # st.error(f"Failed to download data for {ticker1} or {ticker2}.") # UI feedback in app.py
             return None, f"Failed to download data for {ticker1} or {ticker2}."
         if 'Close' not in data.columns:
-            # st.error("Could not find 'Close' price column in downloaded data.")
             return None, "Could not find 'Close' price column in downloaded data."
 
-        close_data = data
+        close_data = data.get('Close', pd.DataFrame())
         if close_data.empty:
-            # st.warning(f"Could not retrieve 'Close' price data for {ticker1} or {ticker2}.")
             return None, f"Could not retrieve 'Close' price data for {ticker1} or {ticker2}."
 
         close_data.ffill(inplace=True)
@@ -41,18 +40,16 @@ def calculate_rolling_correlation(ticker1, ticker2, window=ROLLING_WINDOW, years
         if ticker2 not in close_data.columns or close_data[ticker2].isnull().all():
             missing_tickers.append(ticker2)
         if missing_tickers:
-            # st.error(f"Could not find sufficient data for ticker(s): {', '.join(missing_tickers)}.")
             return None, f"Could not find sufficient data for ticker(s): {', '.join(missing_tickers)}."
 
         returns = close_data.pct_change().dropna()
         if ticker1 not in returns.columns or ticker2 not in returns.columns or returns.empty:
-            # st.warning(f"Could not calculate returns for {ticker1} or {ticker2}.")
             return None, f"Could not calculate returns for {ticker1} or {ticker2}."
         if returns[ticker1].isnull().all() or returns[ticker2].isnull().all():
-            # st.warning(f"Returns data contains only NaNs for {ticker1} or {ticker2}.")
             return None, f"Returns data contains only NaNs for {ticker1} or {ticker2}."
+        
+        # Check if enough data points for the *passed* rolling window
         if len(returns) < window:
-            # st.warning(f"Not enough data points ({len(returns)}) for the specified {window}-day rolling window.")
             return None, f"Not enough data points ({len(returns)}) for the specified {window}-day rolling window."
 
         rolling_corr = returns[ticker1].rolling(window=window).corr(returns[ticker2]).dropna()
@@ -62,7 +59,6 @@ def calculate_rolling_correlation(ticker1, ticker2, window=ROLLING_WINDOW, years
     except Exception as e:
         print(f"Error calculating rolling correlation for {ticker1}/{ticker2}: {e}")
         print(traceback.format_exc())
-        # st.error(f"An error occurred while calculating correlation for {ticker1}/{ticker2}. Check ticker symbols and data availability.")
         return None, f"An error occurred while calculating correlation for {ticker1}/{ticker2}: {e}"
 
 @st.cache_data
@@ -119,7 +115,6 @@ def get_fred_data(_fred_instance, series_id):
         data = data.dropna() # Remove trailing NaNs
         if data.empty:
             print(f"Warning: FRED data for {series_id} is empty after removing NaNs.")
-            # return None, f"No valid data found for FRED series '{series_id}'." # Optional: treat as error
         print(f"Successfully fetched FRED data for {series_id}. Shape: {data.shape}")
         return data, None
     except Exception as e:
@@ -181,9 +176,9 @@ def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date
         combined_df = pd.concat(all_series_data, axis=1, join='outer')
         combined_df.ffill(inplace=True)
         print("Applied forward fill (ffill) to combined FRED data.")
-        combined_df.dropna(how='all', inplace=True) # Optional: drop rows if all are NaN after ffill
+        combined_df.dropna(how='all', inplace=True) 
         print(f"Combined FRED data shape after ffill: {combined_df.shape}")
-        if errors: # Return errors as part of a successful fetch of *some* data
+        if errors: 
             return combined_df, f"Could not fetch data for some series: {errors}"
         return combined_df, None
     except Exception as e:

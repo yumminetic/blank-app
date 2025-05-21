@@ -16,7 +16,7 @@ sections = {
     "Correlation Calculator": "correlation_calculator",
     "IV Skew Viewer": "iv_skew_viewer",
     "FRED Single Series": "fred_single_viewer",
-    "Fed's Jaws": "fed_jaws_chart",
+    "Fed's Jaws": "fed_jaws_chart", # Key with apostrophe
     "FFR vs Core PCE": "ffr_pce_chart",
     "Gold vs Real Yield": "gold_real_yield_chart",
     "Ticker Reference": "ticker_reference"
@@ -61,7 +61,7 @@ utils.init_state('fred_single_show_recession', True)
 utils.init_state('fed_jaws_data', None); utils.init_state('fed_jaws_error', None); utils.init_state('fed_jaws_calculated', False)
 utils.init_state('fed_jaws_show_recession', True) 
 
-# FFR vs PCE
+# FFR vs Core PCE
 utils.init_state('ffr_pce_data', None); utils.init_state('ffr_pce_error', None); utils.init_state('ffr_pce_calculated', False)
 utils.init_state('current_ffr_pce_diff', None)
 utils.init_state('ffr_pce_start_date', default_fred_start) 
@@ -85,7 +85,8 @@ def date_input_cols(start_date_key, end_date_key, section_key_suffix):
     return st.session_state[start_date_key], st.session_state[end_date_key]
 
 # --- Section 1: Rolling Correlation ---
-st.markdown(f"<a name='{sections['Correlation Calculator']}'></a>", unsafe_allow_html=True) # Anchor
+correlation_anchor_id = sections["Correlation Calculator"]
+st.markdown(f"<a name='{correlation_anchor_id}'></a>", unsafe_allow_html=True) # Anchor
 st.header("📊 Rolling Correlation Calculator")
 st.write("Calculates the rolling correlation between the daily returns of two assets.")
 st.slider("Select Rolling Window (Days):", min_value=config.MIN_ROLLING_WINDOW_CORR, max_value=config.MAX_ROLLING_WINDOW_CORR, value=st.session_state.rolling_window_corr, step=1, key="rolling_window_corr")
@@ -114,7 +115,8 @@ with plot_placeholder_corr.container():
     else: st.info("Select window, enter tickers, and click 'Calculate Correlation'.")
 
 # --- Section 2: Implied Volatility Skew ---
-st.markdown(f"<a name='{sections['IV Skew Viewer']}'></a>", unsafe_allow_html=True) # Anchor
+iv_skew_anchor_id = sections["IV Skew Viewer"]
+st.markdown(f"<a name='{iv_skew_anchor_id}'></a>", unsafe_allow_html=True) # Anchor
 st.divider(); st.header("📉 Implied Volatility Skew Viewer")
 st.write("Visualizes IV smile/skew. Zero IVs are interpolated.")
 st.session_state.ticker_input_skew = st.text_input("Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget").strip().upper()
@@ -150,9 +152,13 @@ with plot_placeholder_skew.container():
     else: st.info("Enter ticker, select expiry, and click 'Graph IV Skew'.")
 
 # --- FRED Sections Common UI Elements ---
-def fred_section_ui(section_key_suffix, title, description, series_fetch_logic, plot_function, display_metrics_logic=None, series_select_options=None, default_series_name_key=None, series_id_map=None):
-    st.markdown(f"<a name='{sections[title.split(': ')[0] if ': ' in title else title]}'></a>", unsafe_allow_html=True) # Anchor based on main title part
-    st.divider(); st.header(title); st.write(description)
+def fred_section_ui(section_key_suffix, title_for_tab, header_text, description, series_fetch_logic, plot_function, display_metrics_logic=None, series_select_options=None, default_series_name_key=None, series_id_map=None):
+    # Use title_for_tab to get the anchor_id from the sections dictionary
+    anchor_id = sections.get(title_for_tab) # Get anchor_id using the tab display title
+    if anchor_id:
+        st.markdown(f"<a name='{anchor_id}'></a>", unsafe_allow_html=True)
+    
+    st.divider(); st.header(header_text); st.write(description) # Use separate header_text for display
     start_date_key, end_date_key = f"{section_key_suffix}_start_date", f"{section_key_suffix}_end_date"
     show_recession_key = f"{section_key_suffix}_show_recession"
     data_key, error_key, calculated_key = f"{section_key_suffix}_data", f"{section_key_suffix}_error", f"{section_key_suffix}_calculated"
@@ -167,7 +173,7 @@ def fred_section_ui(section_key_suffix, title, description, series_fetch_logic, 
     
     plot_placeholder = st.empty(); metric_placeholder = st.empty()
 
-    if st.button(f"Fetch/Refresh {title} Data", key=f"fetch_button_{section_key_suffix}", type="primary"):
+    if st.button(f"Fetch/Refresh {header_text} Data", key=f"fetch_button_{section_key_suffix}", type="primary"): # Use header_text for button
         st.session_state[data_key], st.session_state[error_key] = None, None 
         st.session_state[calculated_key] = True 
         series_fetch_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, series_id_map, default_series_name_key)
@@ -181,9 +187,9 @@ def fred_section_ui(section_key_suffix, title, description, series_fetch_logic, 
             df_to_download = st.session_state.get(data_key)
             if df_to_download is not None and not df_to_download.empty:
                 csv_data = utils.convert_df_to_csv(df_to_download)
-                st.download_button(label=f"Download {title} Data (CSV)", data=csv_data, file_name=f"{section_key_suffix}_data.csv", mime='text/csv', key=f"download_csv_{section_key_suffix}")
+                st.download_button(label=f"Download {header_text} Data (CSV)", data=csv_data, file_name=f"{section_key_suffix}_data.csv", mime='text/csv', key=f"download_csv_{section_key_suffix}")
         elif st.session_state.get(error_key) and st.session_state[calculated_key]: pass 
-        else: st.info(f"Select date range and click 'Fetch/Refresh {title} Data'.")
+        else: st.info(f"Select date range and click 'Fetch/Refresh {header_text} Data'.")
     
     with metric_placeholder.container():
         if st.session_state[calculated_key] and display_metrics_logic:
@@ -223,12 +229,16 @@ def display_single_fred_metrics(data_df, _):
         if notes and isinstance(notes, str): st.expander("Series Notes").caption(notes)
     elif st.session_state.fred_info_error: st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
 
-if config.fred: fred_section_ui("fred_single", sections["FRED Single Series"], "Fetches and displays a single time series from FRED.", fetch_single_fred_logic, plot_single_fred, display_single_fred_metrics, config.fred_series_options, "fred_series_name_input", config.FRED_SERIES_EXAMPLES)
-else: st.markdown(f"<a name='{sections['FRED Single Series']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["FRED Single Series"]); st.error(config.fred_error_message)
+# Use the key from `sections` for `title_for_tab` and a descriptive string for `header_text`
+if config.fred: fred_section_ui("fred_single", "FRED Single Series", "🏛️ FRED Economic Data Viewer", "Fetches and displays a single time series from FRED.", fetch_single_fred_logic, plot_single_fred, display_single_fred_metrics, config.fred_series_options, "fred_series_name_input", config.FRED_SERIES_EXAMPLES)
+else: st.markdown(f"<a name='{sections['FRED Single Series']}'></a>", unsafe_allow_html=True); st.divider(); st.header("🏛️ FRED Economic Data Viewer"); st.error(config.fred_error_message)
+
 
 # --- Section 4: Fed's Jaws Chart ---
-st.markdown(f"<a name='{sections['Fed\'s Jaws']}'></a>", unsafe_allow_html=True) # Anchor
-st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates")
+key_feds_jaws = "Fed's Jaws" # Define the key to avoid f-string issue
+anchor_id_feds_jaws = sections[key_feds_jaws]
+st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True) # Anchor
+st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates") # Keep descriptive header
 st.write(f"Visualizes key Federal Reserve interest rates over the last **{config.FED_JAWS_DURATION_DAYS} days**.")
 plot_placeholder_jaws = st.empty()
 if config.fred:
@@ -247,7 +257,10 @@ if config.fred:
                 st.download_button("Download Jaws Data (CSV)", utils.convert_df_to_csv(st.session_state.fed_jaws_data), "fed_jaws_data.csv", "text/csv", key="dl_jaws_csv")
         elif st.session_state.fed_jaws_error and st.session_state.fed_jaws_calculated: pass 
         else: st.info(f"Click 'Fetch/Refresh' for Fed's Jaws chart.")
-else: st.markdown(f"<a name='{sections['Fed\'s Jaws']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["Fed's Jaws"]); st.error(config.fred_error_message)
+else: 
+    st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True) # Use defined anchor_id
+    st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates") # Keep descriptive header
+    st.error(config.fred_error_message)
 
 # --- Section 5: Fed Funds Rate vs Core PCE ---
 def fetch_ffr_pce_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, *_):
@@ -269,8 +282,8 @@ def display_ffr_pce_metrics(data_df, _):
         else: st.caption("N/A (No overlapping data for metric).")
     else: st.caption("N/A (Data missing for metric).")
 
-if config.fred: fred_section_ui("ffr_pce", sections["FFR vs Core PCE"], f"Visualizes FFR vs Core PCE YoY. Gap colored if FFR - PCE YoY > {config.FFR_PCE_THRESHOLD}%.", fetch_ffr_pce_logic, plot_ffr_pce, display_ffr_pce_metrics)
-else: st.markdown(f"<a name='{sections['FFR vs Core PCE']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["FFR vs Core PCE"]); st.error(config.fred_error_message)
+if config.fred: fred_section_ui("ffr_pce", "FFR vs Core PCE", "💰 Fed Funds Rate vs. Core PCE Inflation", f"Visualizes FFR vs Core PCE YoY. Gap colored if FFR - PCE YoY > {config.FFR_PCE_THRESHOLD}%.", fetch_ffr_pce_logic, plot_ffr_pce, display_ffr_pce_metrics)
+else: st.markdown(f"<a name='{sections['FFR vs Core PCE']}'></a>", unsafe_allow_html=True); st.divider(); st.header("💰 Fed Funds Rate vs. Core PCE Inflation"); st.error(config.fred_error_message)
 
 # --- Section 6: Gold vs. 10Y Real Yield ---
 def fetch_gold_ry_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, *_): 
@@ -317,11 +330,12 @@ def display_gold_ry_metrics(data_df, _):
         c2.metric("Latest 10Y Real Yield", f"{latest_ry:.2f}%" if isinstance(latest_ry, (float,int)) else latest_ry)
     else: st.caption("N/A (Data missing for metric).")
 
-if config.fred: fred_section_ui("gold_ry", sections["Gold vs Real Yield"], f"Plots Gold Price ({config.GOLD_YFINANCE_TICKER} from yfinance) against the 10-Year Treasury Inflation-Indexed Security yield (FRED).", fetch_gold_ry_logic, plot_gold_ry, display_gold_ry_metrics)
-else: st.markdown(f"<a name='{sections['Gold vs Real Yield']}'></a>", unsafe_allow_html=True); st.divider(); st.header(sections["Gold vs Real Yield"]); st.error(config.fred_error_message)
+if config.fred: fred_section_ui("gold_ry", "Gold vs Real Yield", "🪙 Gold vs. 10Y Real Yield", f"Plots Gold Price ({config.GOLD_YFINANCE_TICKER} from yfinance) against the 10-Year Treasury Inflation-Indexed Security yield (FRED).", fetch_gold_ry_logic, plot_gold_ry, display_gold_ry_metrics)
+else: st.markdown(f"<a name='{sections['Gold vs Real Yield']}'></a>", unsafe_allow_html=True); st.divider(); st.header("🪙 Gold vs. 10Y Real Yield"); st.error(config.fred_error_message)
 
 # --- Ticker Reference Table & Footer ---
-st.markdown(f"<a name='{sections['Ticker Reference']}'></a>", unsafe_allow_html=True) # Anchor
+ticker_ref_anchor_id = sections["Ticker Reference"]
+st.markdown(f"<a name='{ticker_ref_anchor_id}'></a>", unsafe_allow_html=True) # Anchor
 st.divider()
 with st.expander("Show Example Ticker Symbols (Yahoo Finance)"): 
     st.dataframe(config.ticker_df, use_container_width=True, hide_index=True, column_config={"Asset Class": st.column_config.TextColumn("Asset Class"), "Description": st.column_config.TextColumn("Description"), "Yahoo Ticker": st.column_config.TextColumn("Yahoo Ticker")})

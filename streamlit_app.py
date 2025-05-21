@@ -1,469 +1,267 @@
 # streamlit_app.py
-"""
-Main Streamlit application file for the Macro/Quantamental Dashboard.
-Handles UI, state management, and orchestrates calls to other modules.
-"""
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, date # Ensure date is imported
 import traceback 
+import config, data_fetchers, plotters, utils
 
-import config # Assuming config.py is in the same directory
-import data_fetchers # Assuming data_fetchers.py is in the same directory
-import plotters # Assuming plotters.py is in the same directory
-import utils # Assuming utils.py is in the same directory
-
-# --- Streamlit App ---
-st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide") # Updated page title
-st.title("📊 Macro/Quantamental Dashboard") # Updated main title
+st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide")
+st.title("📊 Macro/Quantamental Dashboard")
 
 # --- Initialize Session State ---
-# Correlation State
-utils.init_state('rolling_corr_data', None)
-utils.init_state('rolling_corr_error', None) 
-utils.init_state('ticker1_calculated_corr', None)
-utils.init_state('ticker2_calculated_corr', None)
-utils.init_state('ticker1_input_corr', config.DEFAULT_TICKER_1_CORR)
-utils.init_state('ticker2_input_corr', config.DEFAULT_TICKER_2_CORR)
-utils.init_state('rolling_window_corr', config.DEFAULT_ROLLING_WINDOW_CORR) # For the slider
-utils.init_state('corr_window_calculated', config.DEFAULT_ROLLING_WINDOW_CORR) # To store the window used for the last plot
+default_fred_start = date(2000, 1, 1) # Default start for FRED charts
+default_fred_end = date.today()
 
-# Skew State
-utils.init_state('calls_data_skew', None)
-utils.init_state('puts_data_skew', None)
-utils.init_state('price_skew', None)
-utils.init_state('skew_error', None) 
-utils.init_state('ticker_calculated_skew', None)
-utils.init_state('expiry_calculated_skew', None)
-utils.init_state('ticker_input_skew', config.DEFAULT_TICKER_SKEW)
-utils.init_state('expiry_input_skew', None) 
+# Correlation
+utils.init_state('rolling_corr_data', None); utils.init_state('rolling_corr_error', None) 
+utils.init_state('ticker1_calculated_corr', None); utils.init_state('ticker2_calculated_corr', None)
+utils.init_state('ticker1_input_corr', config.DEFAULT_TICKER_1_CORR); utils.init_state('ticker2_input_corr', config.DEFAULT_TICKER_2_CORR)
+utils.init_state('rolling_window_corr', config.DEFAULT_ROLLING_WINDOW_CORR)
+utils.init_state('corr_window_calculated', config.DEFAULT_ROLLING_WINDOW_CORR)
 
-# FRED (Single Series) State
-utils.init_state('fred_data', None)
-utils.init_state('fred_series_info', None)
-utils.init_state('fred_data_error', None)
-utils.init_state('fred_info_error', None)
-utils.init_state('fred_series_id_calculated', None)
-utils.init_state('fred_series_name_calculated', None)
-utils.init_state('fred_series_name_input', config.DEFAULT_FRED_SERIES_NAME)
+# Skew
+utils.init_state('calls_data_skew', None); utils.init_state('puts_data_skew', None); utils.init_state('price_skew', None)
+utils.init_state('skew_error', None); utils.init_state('ticker_calculated_skew', None); utils.init_state('expiry_calculated_skew', None)
+utils.init_state('ticker_input_skew', config.DEFAULT_TICKER_SKEW); utils.init_state('expiry_input_skew', None) 
 
-# Fed's Jaws State
-utils.init_state('fed_jaws_data', None)
-utils.init_state('fed_jaws_error', None)
-utils.init_state('fed_jaws_calculated', False)
+# FRED Single
+utils.init_state('fred_data', None); utils.init_state('fred_series_info', None); utils.init_state('fred_data_error', None)
+utils.init_state('fred_info_error', None); utils.init_state('fred_series_id_calculated', None)
+utils.init_state('fred_series_name_calculated', None); utils.init_state('fred_series_name_input', config.DEFAULT_FRED_SERIES_NAME)
+utils.init_state('fred_start_date', default_fred_start); utils.init_state('fred_end_date', default_fred_end)
+utils.init_state('fred_show_recession', True)
 
-# Fed Funds vs Core PCE State
-utils.init_state('ffr_pce_data', None) 
-utils.init_state('ffr_pce_error', None)
-utils.init_state('ffr_pce_calculated', False)
+# Fed Jaws
+utils.init_state('fed_jaws_data', None); utils.init_state('fed_jaws_error', None); utils.init_state('fed_jaws_calculated', False)
+# Note: Fed Jaws uses fixed duration from config, so no date pickers here unless requested.
+
+# FFR vs PCE
+utils.init_state('ffr_pce_data', None); utils.init_state('ffr_pce_error', None); utils.init_state('ffr_pce_calculated', False)
 utils.init_state('current_ffr_pce_diff', None)
+utils.init_state('ffr_pce_start_date', default_fred_start); utils.init_state('ffr_pce_end_date', default_fred_end)
+utils.init_state('ffr_pce_show_recession', True)
 
+# Gold vs Real Yield
+utils.init_state('gold_ry_data', None); utils.init_state('gold_ry_error', None); utils.init_state('gold_ry_calculated', False)
+utils.init_state('latest_gold', None); utils.init_state('latest_real_yield', None)
+utils.init_state('gold_ry_start_date', default_fred_start); utils.init_state('gold_ry_end_date', default_fred_end)
+utils.init_state('gold_ry_show_recession', True)
+
+# --- Helper for Date Inputs ---
+def date_input_cols(start_date_key, end_date_key, section_key_suffix):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.session_state[start_date_key] = st.date_input("Start Date", value=st.session_state[start_date_key], key=f"start_date_{section_key_suffix}")
+    with col2:
+        st.session_state[end_date_key] = st.date_input("End Date", value=st.session_state[end_date_key], key=f"end_date_{section_key_suffix}")
+    return st.session_state[start_date_key], st.session_state[end_date_key]
 
 # --- Section 1: Rolling Correlation ---
 st.header("📊 Rolling Correlation Calculator")
-st.write("Calculates the rolling correlation between the daily returns of two assets.")
-
-# Input for rolling window
-# The value from the slider is automatically stored in st.session_state.rolling_window_corr due to the key
-st.slider(
-    "Select Rolling Window (Days):",
-    min_value=config.MIN_ROLLING_WINDOW_CORR,
-    max_value=config.MAX_ROLLING_WINDOW_CORR,
-    value=st.session_state.rolling_window_corr, 
-    step=1,
-    key="rolling_window_corr" # This key links the slider to st.session_state.rolling_window_corr
-)
-
+st.write("Calculates the rolling correlation between daily returns of two assets.")
+st.slider("Select Rolling Window (Days):", min_value=config.MIN_ROLLING_WINDOW_CORR, max_value=config.MAX_ROLLING_WINDOW_CORR, value=st.session_state.rolling_window_corr, step=1, key="rolling_window_corr")
 col1_corr, col2_corr = st.columns(2)
-with col1_corr:
-    ticker1_input_val_corr = st.text_input(
-        "Ticker 1:", value=st.session_state.ticker1_input_corr, key="ticker1_corr_widget",
-        help="Enter a Yahoo Finance ticker symbol (e.g., AAPL, ^GSPC, EURUSD=X)."
-    )
-    st.session_state.ticker1_input_corr = ticker1_input_val_corr.strip().upper() if isinstance(ticker1_input_val_corr, str) else config.DEFAULT_TICKER_1_CORR
-
-with col2_corr:
-    ticker2_input_val_corr = st.text_input(
-        "Ticker 2:", value=st.session_state.ticker2_input_corr, key="ticker2_corr_widget",
-        help="Enter another Yahoo Finance ticker symbol (e.g., GLD, ^IXIC, BTC-USD)."
-    )
-    st.session_state.ticker2_input_corr = ticker2_input_val_corr.strip().upper() if isinstance(ticker2_input_val_corr, str) else config.DEFAULT_TICKER_2_CORR
-
-calculate_corr_button = st.button("Calculate Correlation", key="corr_button", type="primary")
-plot_placeholder_corr = st.empty() 
-
-if calculate_corr_button:
-    t1_corr = st.session_state.ticker1_input_corr
-    t2_corr = st.session_state.ticker2_input_corr
-    selected_rolling_window = st.session_state.rolling_window_corr # Get current window from slider state
-
-    st.session_state.rolling_corr_data = None 
-    st.session_state.rolling_corr_error = None 
-    st.session_state.ticker1_calculated_corr = t1_corr 
-    st.session_state.ticker2_calculated_corr = t2_corr
-    st.session_state.corr_window_calculated = selected_rolling_window # Store the window used for this specific calculation
-
-
-    if t1_corr and t2_corr:
-        if t1_corr == t2_corr:
-            st.warning("Please enter two different ticker symbols.")
-            st.session_state.ticker1_calculated_corr = None # Clear if invalid for plot
-            st.session_state.ticker2_calculated_corr = None
-        else:
-            with st.spinner(f"Calculating {selected_rolling_window}-day rolling correlation for {t1_corr} vs {t2_corr}..."):
-                result_corr, error_msg_corr = data_fetchers.calculate_rolling_correlation(
-                    t1_corr, t2_corr, window=selected_rolling_window, years=config.YEARS_OF_DATA_CORR
-                )
-                st.session_state.rolling_corr_data = result_corr
-                st.session_state.rolling_corr_error = error_msg_corr
-                if error_msg_corr:
-                    plot_placeholder_corr.error(f"Correlation Error: {error_msg_corr}")
-    elif not t1_corr and not t2_corr:
-        st.warning("Please enter ticker symbols in both fields.")
-        st.session_state.ticker1_calculated_corr = None; st.session_state.ticker2_calculated_corr = None
-    else:
-        st.warning("Please enter a ticker symbol in the missing field.")
-        st.session_state.ticker1_calculated_corr = None; st.session_state.ticker2_calculated_corr = None
-
+with col1_corr: st.session_state.ticker1_input_corr = st.text_input("Ticker 1:", value=st.session_state.ticker1_input_corr, key="ticker1_corr_widget").strip().upper()
+with col2_corr: st.session_state.ticker2_input_corr = st.text_input("Ticker 2:", value=st.session_state.ticker2_input_corr, key="ticker2_corr_widget").strip().upper()
+plot_placeholder_corr = st.empty()
+if st.button("Calculate Correlation", key="corr_button", type="primary"):
+    t1, t2, win = st.session_state.ticker1_input_corr, st.session_state.ticker2_input_corr, st.session_state.rolling_window_corr
+    st.session_state.ticker1_calculated_corr, st.session_state.ticker2_calculated_corr, st.session_state.corr_window_calculated = t1, t2, win
+    if t1 and t2 and t1 != t2:
+        with st.spinner(f"Calculating {win}-day correlation for {t1} vs {t2}..."):
+            st.session_state.rolling_corr_data, st.session_state.rolling_corr_error = data_fetchers.calculate_rolling_correlation(t1, t2, win)
+            if st.session_state.rolling_corr_error: plot_placeholder_corr.error(f"Corr Error: {st.session_state.rolling_corr_error}")
+    else: st.warning("Enter two different tickers.")
 with plot_placeholder_corr.container(): 
-    if st.session_state.get('ticker1_calculated_corr') and st.session_state.get('ticker2_calculated_corr'):
-        # Plot if no error during fetch, or if data exists despite a warning (partial fetch)
-        if not st.session_state.rolling_corr_error or st.session_state.rolling_corr_data is not None: 
-            fig_corr = plotters.create_corr_plot(
-                st.session_state.rolling_corr_data,
-                st.session_state.ticker1_calculated_corr,
-                st.session_state.ticker2_calculated_corr,
-                window=st.session_state.corr_window_calculated, # Use the window that was actually used for calculation
-                years=config.YEARS_OF_DATA_CORR
-            )
-            st.plotly_chart(fig_corr, use_container_width=True)
-        # If there was an error and no data, the error message is already shown by the button logic above.
-    else: # Initial state or after invalid input
-        st.info("Select a rolling window, enter two ticker symbols, and click 'Calculate Correlation'.")
-
+    if st.session_state.ticker1_calculated_corr and st.session_state.rolling_corr_data is not None:
+        fig_corr = plotters.create_corr_plot(st.session_state.rolling_corr_data, st.session_state.ticker1_calculated_corr, st.session_state.ticker2_calculated_corr, st.session_state.corr_window_calculated)
+        st.plotly_chart(fig_corr, use_container_width=True)
+        csv_corr = utils.convert_df_to_csv(st.session_state.rolling_corr_data.to_frame()) # Convert Series to DataFrame for proper CSV
+        st.download_button(label="Download Correlation Data (CSV)", data=csv_corr, file_name=f"corr_{st.session_state.ticker1_calculated_corr}_{st.session_state.ticker2_calculated_corr}_{st.session_state.corr_window_calculated}d.csv", mime='text/csv', key="download_corr_csv")
+    elif st.session_state.rolling_corr_error and st.session_state.ticker1_calculated_corr : pass # Error already displayed
+    else: st.info("Select window, enter tickers, and click 'Calculate Correlation'.")
 
 # --- Section 2: Implied Volatility Skew ---
-st.divider()
-st.header("📉 Implied Volatility Skew Viewer")
-st.write("Visualizes the Implied Volatility (IV) smile/skew for options of a selected equity or ETF. Zero IV values are interpolated for smoother visualization.")
-
-ticker_input_val_skew = st.text_input(
-    "Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget",
-    help="Enter a Yahoo Finance ticker for a stock or ETF with options (e.g., AAPL, SPY, TSLA)."
-)
-st.session_state.ticker_input_skew = ticker_input_val_skew.strip().upper() if isinstance(ticker_input_val_skew, str) else config.DEFAULT_TICKER_SKEW
-
-expirations, error_msg_exp = data_fetchers.get_expiration_dates(st.session_state.ticker_input_skew)
-selected_expiry_for_selectbox = None 
-
-if error_msg_exp: 
-    if st.session_state.ticker_input_skew: 
-        st.warning(error_msg_exp)
-
-if expirations: 
-    try:
-        today = pd.Timestamp.now().normalize()
-        exp_dates_ts = pd.to_datetime(expirations)
-        future_dates_ts = exp_dates_ts[exp_dates_ts >= today]
-        default_sel_index = 0
-
-        if not future_dates_ts.empty:
-            target_date = today + pd.Timedelta(days=90)
-            closest_date_idx_in_future = np.abs((future_dates_ts - target_date).total_seconds()).argmin()
-            closest_date_ts = future_dates_ts[closest_date_idx_in_future]
-            default_expiry_str = closest_date_ts.strftime('%Y-%m-%d')
-            if default_expiry_str in expirations:
-                default_sel_index = expirations.index(default_expiry_str)
-        elif expirations: 
-            default_sel_index = len(expirations) - 1
-        
-        current_selection_index = default_sel_index 
-        if st.session_state.ticker_input_skew == st.session_state.get('ticker_calculated_skew') and \
-           st.session_state.get('expiry_calculated_skew') in expirations:
-            current_selection_index = expirations.index(st.session_state.expiry_calculated_skew)
-        
-        st.session_state.expiry_input_skew = st.selectbox(
-            "Select Expiration Date:", expirations, index=current_selection_index, key="expiry_select_widget_skew", 
-            help="Choose the options contract expiration date."
-        )
-        selected_expiry_for_selectbox = st.session_state.expiry_input_skew
-
-    except Exception as e:
-        st.error(f"Error processing expiration dates: {e}")
-        print(f"Error processing expiration dates: {e}\n{traceback.format_exc()}")
-        if expirations: 
-             st.session_state.expiry_input_skew = st.selectbox(
-                "Select Expiration Date (fallback):", expirations, key="expiry_select_widget_fallback_skew" 
-            )
-             selected_expiry_for_selectbox = st.session_state.expiry_input_skew
-elif st.session_state.ticker_input_skew and not error_msg_exp: 
-     st.info(f"No option expiration dates found for '{st.session_state.ticker_input_skew}'. It might not have options or data is temporarily unavailable.")
-
-
-graph_skew_button = st.button("Graph IV Skew", key="skew_button", type="primary", disabled=(not selected_expiry_for_selectbox))
+st.divider(); st.header("📉 Implied Volatility Skew Viewer")
+st.write("Visualizes IV smile/skew. Zero IVs are interpolated.")
+st.session_state.ticker_input_skew = st.text_input("Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget").strip().upper()
+expirations, err_exp = data_fetchers.get_expiration_dates(st.session_state.ticker_input_skew)
+sel_exp = None
+if err_exp: st.warning(err_exp)
+if expirations:
+    try: # Smart default for expiry
+        today = pd.Timestamp.now().normalize(); future_dates = pd.to_datetime(expirations)[pd.to_datetime(expirations) >= today]
+        def_idx = np.abs((future_dates - (today + pd.Timedelta(days=90))).total_seconds()).argmin() if not future_dates.empty else (len(expirations) -1 if expirations else 0)
+        curr_idx = expirations.index(st.session_state.expiry_calculated_skew) if st.session_state.ticker_input_skew == st.session_state.ticker_calculated_skew and st.session_state.expiry_calculated_skew in expirations else def_idx
+        sel_exp = st.selectbox("Select Expiration Date:", expirations, index=curr_idx, key="expiry_select_widget_skew")
+    except Exception as e: sel_exp = st.selectbox("Select Expiration Date (fallback):", expirations, key="expiry_select_fb_skew") if expirations else None
+elif st.session_state.ticker_input_skew and not err_exp: st.info(f"No options for '{st.session_state.ticker_input_skew}'.")
 plot_placeholder_skew = st.empty()
-
-if graph_skew_button:
-    ticker_to_graph_skew = st.session_state.ticker_input_skew
-    expiry_to_graph_skew = selected_expiry_for_selectbox
-
-    st.session_state.calls_data_skew = None; st.session_state.puts_data_skew = None; st.session_state.price_skew = None
-    st.session_state.skew_error = None
-    st.session_state.ticker_calculated_skew = ticker_to_graph_skew 
-    st.session_state.expiry_calculated_skew = expiry_to_graph_skew 
-
-    if ticker_to_graph_skew and expiry_to_graph_skew:
-        with st.spinner(f"Fetching option chain data for {ticker_to_graph_skew} (Expiry: {expiry_to_graph_skew})..."):
-            calls, puts, price, error_msg_fetch_skew = data_fetchers.get_option_chain_data(ticker_to_graph_skew, expiry_to_graph_skew)
-            st.session_state.calls_data_skew = calls
-            st.session_state.puts_data_skew = puts
-            st.session_state.price_skew = price
-            st.session_state.skew_error = error_msg_fetch_skew
-            if error_msg_fetch_skew:
-                plot_placeholder_skew.error(f"Option Chain Error: {error_msg_fetch_skew}")
-    else: 
-        st.warning("Please enter a ticker and select a valid expiration date.")
-        st.session_state.ticker_calculated_skew = None; st.session_state.expiry_calculated_skew = None
-
-
+if st.button("Graph IV Skew", key="skew_button", type="primary", disabled=(not sel_exp)):
+    st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew = st.session_state.ticker_input_skew, sel_exp
+    with st.spinner(f"Fetching options for {st.session_state.ticker_calculated_skew} ({st.session_state.expiry_calculated_skew})..."):
+        calls, puts, price, err = data_fetchers.get_option_chain_data(st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew)
+        st.session_state.calls_data_skew, st.session_state.puts_data_skew, st.session_state.price_skew, st.session_state.skew_error = calls, puts, price, err
+        if err: plot_placeholder_skew.error(f"Options Error: {err}")
 with plot_placeholder_skew.container():
-    if st.session_state.get('ticker_calculated_skew') and st.session_state.get('expiry_calculated_skew'):
-        if not st.session_state.skew_error or \
-           (st.session_state.calls_data_skew is not None or st.session_state.puts_data_skew is not None):
-            # The create_iv_skew_plot function now handles interpolation internally
-            fig_skew = plotters.create_iv_skew_plot(
-                st.session_state.calls_data_skew, st.session_state.puts_data_skew,
-                st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew,
-                st.session_state.price_skew
-            )
-            st.plotly_chart(fig_skew, use_container_width=True)
-    else:
-        st.info("Enter an equity/ETF ticker, select an expiration date, and click 'Graph IV Skew'.")
+    if st.session_state.ticker_calculated_skew and (st.session_state.calls_data_skew is not None or st.session_state.puts_data_skew is not None):
+        fig_skew = plotters.create_iv_skew_plot(st.session_state.calls_data_skew, st.session_state.puts_data_skew, st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew, st.session_state.price_skew)
+        st.plotly_chart(fig_skew, use_container_width=True)
+        # CSV Download for options data (calls and puts separately or combined)
+        if st.session_state.calls_data_skew is not None and not st.session_state.calls_data_skew.empty:
+            csv_calls = utils.convert_df_to_csv(st.session_state.calls_data_skew)
+            st.download_button(label="Download Calls Data (CSV)", data=csv_calls, file_name=f"calls_{st.session_state.ticker_calculated_skew}_{st.session_state.expiry_calculated_skew}.csv", mime='text/csv', key="download_calls_csv")
+        if st.session_state.puts_data_skew is not None and not st.session_state.puts_data_skew.empty:
+            csv_puts = utils.convert_df_to_csv(st.session_state.puts_data_skew)
+            st.download_button(label="Download Puts Data (CSV)", data=csv_puts, file_name=f"puts_{st.session_state.ticker_calculated_skew}_{st.session_state.expiry_calculated_skew}.csv", mime='text/csv', key="download_puts_csv")
+    elif st.session_state.skew_error and st.session_state.ticker_calculated_skew: pass
+    else: st.info("Enter ticker, select expiry, and click 'Graph IV Skew'.")
 
+# --- FRED Sections Common UI Elements ---
+def fred_section_ui(section_key_suffix, title, description, series_fetch_logic, plot_function, display_metrics_logic=None, series_select_options=None, default_series_name_key=None, series_id_map=None):
+    st.divider(); st.header(title); st.write(description)
+    start_date_key, end_date_key = f"{section_key_suffix}_start_date", f"{section_key_suffix}_end_date"
+    show_recession_key = f"{section_key_suffix}_show_recession"
+    data_key, error_key, calculated_key = f"{section_key_suffix}_data", f"{section_key_suffix}_error", f"{section_key_suffix}_calculated"
+    
+    date_input_cols(start_date_key, end_date_key, section_key_suffix)
+    st.checkbox("Show NBER Recession Bands", value=st.session_state[show_recession_key], key=show_recession_key)
 
-# --- Section 3: FRED Economic Data (Single Series) ---
-st.divider()
-st.header("🏛️ FRED Economic Data Viewer (Single Series)")
-st.write("Fetches and displays a single time series from the FRED database.")
-plot_placeholder_fred = st.empty()
-caption_placeholder_fred = st.empty()
+    if series_select_options: # For single FRED series viewer
+        st.session_state[default_series_name_key] = st.selectbox("Select FRED Series:", options=series_select_options, index=series_select_options.index(st.session_state[default_series_name_key]) if st.session_state[default_series_name_key] in series_select_options else 0, key=f"select_{section_key_suffix}")
+    
+    plot_placeholder = st.empty(); metric_placeholder = st.empty()
 
-if config.fred is None: 
-    with plot_placeholder_fred.container(): 
-        st.error(config.fred_error_message or "FRED API client could not be initialized. Please configure your FRED_API_KEY in Streamlit Secrets.")
-else:
-    try:
-        current_fred_series_name_index = config.fred_series_options.index(st.session_state.fred_series_name_input)
-    except ValueError:
-        current_fred_series_name_index = config.fred_series_options.index(config.DEFAULT_FRED_SERIES_NAME) 
-        st.session_state.fred_series_name_input = config.DEFAULT_FRED_SERIES_NAME 
+    if st.button(f"Fetch/Refresh {title} Data", key=f"fetch_{section_key_suffix}", type="primary"):
+        st.session_state[data_key], st.session_state[error_key] = None, None
+        st.session_state[calculated_key] = True
+        series_fetch_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, series_id_map if series_id_map else None, default_series_name_key if default_series_name_key else None) # Pass more args if needed
+        if st.session_state[error_key]: plot_placeholder.error(f"Data Error: {st.session_state[error_key]}")
 
-    st.session_state.fred_series_name_input = st.selectbox(
-        "Select FRED Series:", options=config.fred_series_options,
-        index=current_fred_series_name_index,
-        key="fred_series_select_widget", help="Select an economic data series from FRED."
-    )
-    selected_series_id_fred = config.FRED_SERIES_EXAMPLES.get(st.session_state.fred_series_name_input)
-    fetch_fred_button = st.button("Fetch & Plot FRED Data", key="fred_button", type="primary")
+    with plot_placeholder.container():
+        if st.session_state[calculated_key] and st.session_state[data_key] is not None:
+            fig = plot_function(st.session_state[data_key], st.session_state[show_recession_key], section_key_suffix, series_id_map if series_id_map else None, default_series_name_key if default_series_name_key else None) # Pass more args if needed
+            if fig: st.plotly_chart(fig, use_container_width=True)
+            csv_data = utils.convert_df_to_csv(st.session_state[data_key])
+            st.download_button(label=f"Download {title} Data (CSV)", data=csv_data, file_name=f"{section_key_suffix}_data.csv", mime='text/csv', key=f"download_{section_key_suffix}_csv")
+        elif st.session_state[error_key] and st.session_state[calculated_key]: pass
+        else: st.info(f"Select date range and click 'Fetch/Refresh {title} Data'.")
+    
+    with metric_placeholder.container():
+        if st.session_state[calculated_key] and display_metrics_logic:
+            display_metrics_logic(st.session_state[data_key], section_key_suffix)
 
-    if fetch_fred_button:
-        series_name_to_fetch_fred = st.session_state.fred_series_name_input
-        series_id_to_fetch_fred = selected_series_id_fred
-        st.session_state.fred_data = None; st.session_state.fred_series_info = None
-        st.session_state.fred_data_error = None; st.session_state.fred_info_error = None
-        st.session_state.fred_series_id_calculated = series_id_to_fetch_fred
-        st.session_state.fred_series_name_calculated = series_name_to_fetch_fred
+# --- Section 3: FRED Economic Data Viewer (Single Series) ---
+def fetch_single_fred_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, _, series_id_map, default_series_name_key):
+    series_name = st.session_state[default_series_name_key]
+    series_id = series_id_map.get(series_name)
+    st.session_state.fred_series_id_calculated = series_id # Used by plotter
+    st.session_state.fred_series_name_calculated = series_name # Used by plotter
+    if not series_id: st.session_state[error_key] = "Invalid FRED series selection."; return
+    with st.spinner(f"Fetching {series_name} ({series_id})..."):
+        series_data_df = pd.DataFrame()
+        s_data, err = data_fetchers.get_fred_data(config.fred, series_id, st.session_state[start_date_key], st.session_state[end_date_key])
+        if s_data is not None: series_data_df[series_id] = s_data
+        st.session_state.fred_series_info, st.session_state.fred_info_error = data_fetchers.get_fred_series_info(config.fred, series_id) # Store info separately
+        if st.session_state[show_recession_key]:
+            rec_data, rec_err = data_fetchers.get_fred_data(config.fred, config.USREC_SERIES_ID, st.session_state[start_date_key], st.session_state[end_date_key])
+            if rec_data is not None: series_data_df[config.USREC_SERIES_ID] = rec_data
+            if rec_err: err = f"{err if err else ''} Recession Bands Error: {rec_err}"
+        st.session_state[data_key] = series_data_df if not series_data_df.empty else None
+        st.session_state[error_key] = err
 
-        if series_id_to_fetch_fred:
-            with st.spinner(f"Fetching data for {series_id_to_fetch_fred} ({series_name_to_fetch_fred})..."):
-                s_data, err_data = data_fetchers.get_fred_data(config.fred, series_id_to_fetch_fred)
-                s_info, err_info = data_fetchers.get_fred_series_info(config.fred, series_id_to_fetch_fred)
+def plot_single_fred(data_df, show_recession, _, series_id_map, default_series_name_key):
+    series_id = st.session_state.fred_series_id_calculated # Get from state
+    series_data = data_df.get(series_id) if data_df is not None and series_id in data_df.columns else None
+    recession_bands_data = data_df if data_df is not None and config.USREC_SERIES_ID in data_df.columns else None
+    return plotters.create_fred_plot(series_data, series_id, st.session_state.fred_series_info, recession_bands_data, show_recession)
 
-                st.session_state.fred_data = s_data
-                st.session_state.fred_series_info = s_info
-                st.session_state.fred_data_error = err_data
-                st.session_state.fred_info_error = err_info
+def display_single_fred_metrics(data_df, _):
+    if st.session_state.fred_series_info is not None and not st.session_state.fred_series_info.empty:
+        info = st.session_state.fred_series_info
+        st.caption(f"Title: {info.get('title', 'N/A')}. Last Updated: {info.get('last_updated', 'N/A')}. Units: {info.get('units_short', 'N/A')}. Frequency: {info.get('frequency_short', 'N/A')}.")
+        notes = info.get('notes', '')
+        if notes and isinstance(notes, str): st.expander("Series Notes").caption(notes)
+    elif st.session_state.fred_info_error: st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
 
-                if err_data: 
-                    plot_placeholder_fred.error(f"FRED Data Error: {err_data}")
-                if err_info: 
-                    caption_placeholder_fred.warning(f"FRED Metadata Warning: {err_info}")
-        else:
-            st.warning("Invalid FRED series selection.")
-            st.session_state.fred_series_id_calculated = None 
+if config.fred:
+    fred_section_ui("fred_single", "FRED Economic Data Viewer", "Fetches and displays a single time series from FRED.", 
+                    fetch_single_fred_logic, plot_single_fred, display_single_fred_metrics, 
+                    config.fred_series_options, "fred_series_name_input", config.FRED_SERIES_EXAMPLES)
+else: st.divider(); st.header("🏛️ FRED Economic Data Viewer"); st.error(config.fred_error_message)
 
-    with plot_placeholder_fred.container():
-        if st.session_state.get('fred_series_id_calculated'):
-            if not st.session_state.fred_data_error or st.session_state.fred_data is not None:
-                fig_fred = plotters.create_fred_plot(
-                    st.session_state.fred_data,
-                    st.session_state.fred_series_id_calculated,
-                    st.session_state.fred_series_info
-                )
-                st.plotly_chart(fig_fred, use_container_width=True)
-        else: 
-            st.info("Select a FRED economic data series and click 'Fetch & Plot FRED Data'.")
-
-    with caption_placeholder_fred.container():
-        if st.session_state.get('fred_series_id_calculated') and st.session_state.fred_series_info is not None:
-            current_info_fred = st.session_state.fred_series_info
-            if not current_info_fred.empty: 
-                last_updated = current_info_fred.get('last_updated', 'N/A')
-                notes = current_info_fred.get('notes', 'N/A') 
-                notes_display = (notes[:250] + '...') if notes and len(notes) > 250 else notes 
-                st.caption(f"Last Updated: {last_updated}. Notes: {notes_display if notes_display else 'N/A'}")
-            elif st.session_state.fred_data is not None and not st.session_state.fred_info_error : 
-                st.caption("Metadata is available but some fields might be empty for this series.")
 
 # --- Section 4: Fed's Jaws Chart ---
-st.divider()
-st.header("🦅 Fed's Jaws: Key Policy Rates")
+# Fed Jaws uses fixed duration, no date pickers for now
+st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates")
 st.write(f"Visualizes key Federal Reserve interest rates over the last **{config.FED_JAWS_DURATION_DAYS} days**.")
 plot_placeholder_jaws = st.empty()
-
-if config.fred is None:
+if config.fred:
+    st.session_state.fed_jaws_show_recession = st.checkbox("Show NBER Recession Bands", value=True, key="fed_jaws_recession_toggle")
+    if st.button("Fetch/Refresh Fed's Jaws Data", key="jaws_button", type="primary"):
+        st.session_state.fed_jaws_calculated = True
+        end_date = datetime.now(); start_date = end_date - timedelta(days=config.FED_JAWS_DURATION_DAYS)
+        series_to_fetch = list(config.FED_JAWS_SERIES_IDS) # Ensure it's a list
+        with st.spinner(f"Fetching Fed's Jaws data..."):
+            st.session_state.fed_jaws_data, st.session_state.fed_jaws_error = data_fetchers.get_multiple_fred_data(config.fred, series_to_fetch, start_date, end_date, include_recession_bands=st.session_state.fed_jaws_show_recession)
+            if st.session_state.fed_jaws_error: plot_placeholder_jaws.warning(f"Jaws Data Warning: {st.session_state.fed_jaws_error}")
     with plot_placeholder_jaws.container():
-        st.error(config.fred_error_message or "FRED API client is not initialized. Cannot display Fed's Jaws chart.")
-else:
-    fetch_jaws_button = st.button("Fetch/Refresh Fed's Jaws Data", key="jaws_button", type="primary")
-
-    if fetch_jaws_button:
-        st.session_state.fed_jaws_data = None 
-        st.session_state.fed_jaws_error = None
-        st.session_state.fed_jaws_calculated = True 
-
-        with st.spinner(f"Fetching last {config.FED_JAWS_DURATION_DAYS} days of Fed's Jaws data from FRED..."):
-            end_date_jaws = datetime.now()
-            start_date_jaws = end_date_jaws - timedelta(days=config.FED_JAWS_DURATION_DAYS)
-            jaws_data_result, error_msg_jaws = data_fetchers.get_multiple_fred_data(
-                _fred_instance=config.fred, series_ids=config.FED_JAWS_SERIES_IDS,
-                start_date=start_date_jaws, end_date=end_date_jaws
-            )
-            st.session_state.fed_jaws_data = jaws_data_result
-            st.session_state.fed_jaws_error = error_msg_jaws
-            if error_msg_jaws:
-                if jaws_data_result is not None and not jaws_data_result.empty: 
-                     plot_placeholder_jaws.warning(f"Fed's Jaws Data Warning: {error_msg_jaws}")
-                else: 
-                     plot_placeholder_jaws.error(f"Fed's Jaws Data Error: {error_msg_jaws}")
-
-    with plot_placeholder_jaws.container():
-        if st.session_state.get('fed_jaws_calculated'): 
-            if not (st.session_state.fed_jaws_error and (st.session_state.fed_jaws_data is None or st.session_state.fed_jaws_data.empty)) :
-                fig_jaws = plotters.create_fed_jaws_plot(st.session_state.fed_jaws_data) 
-                st.plotly_chart(fig_jaws, use_container_width=True)
-                if st.session_state.fed_jaws_data is not None and not st.session_state.fed_jaws_data.empty:
-                    st.caption(f"Data includes: {', '.join(config.FED_JAWS_SERIES_IDS)}. Target range limits (DFEDTARU, DFEDTARL) shown as dotted red lines.")
-        else: 
-            st.info(f"Click 'Fetch/Refresh Fed's Jaws Data' to load and display the chart for the last {config.FED_JAWS_DURATION_DAYS} days.")
-
+        if st.session_state.fed_jaws_calculated and st.session_state.fed_jaws_data is not None:
+            recession_data = st.session_state.fed_jaws_data if config.USREC_SERIES_ID in st.session_state.fed_jaws_data.columns else None
+            fig_jaws = plotters.create_fed_jaws_plot(st.session_state.fed_jaws_data, recession_data, st.session_state.fed_jaws_show_recession)
+            st.plotly_chart(fig_jaws, use_container_width=True)
+            csv_jaws = utils.convert_df_to_csv(st.session_state.fed_jaws_data)
+            st.download_button("Download Jaws Data (CSV)", csv_jaws, "fed_jaws_data.csv", "text/csv", key="dl_jaws_csv")
+        elif st.session_state.fed_jaws_error and st.session_state.fed_jaws_calculated: pass 
+        else: st.info(f"Click 'Fetch/Refresh' for Fed's Jaws chart.")
+else: st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates"); st.error(config.fred_error_message)
 
 # --- Section 5: Fed Funds Rate vs Core PCE ---
-st.divider()
-st.header("💰 Fed Funds Rate vs. Core PCE Inflation")
-st.write(f"Visualizes the monthly Effective Federal Funds Rate against monthly Core PCE year-over-year inflation (calculated from PCEPILFE index). The gap between the two series is colored red if FFR - Core PCE YoY > {config.FFR_PCE_THRESHOLD}%, potentially indicating heightened recession risk.")
+def fetch_ffr_pce_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, *_):
+    series_ids = [config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_index"]]
+    with st.spinner("Fetching FFR & Core PCE data..."):
+        st.session_state[data_key], st.session_state[error_key] = data_fetchers.get_multiple_fred_data(config.fred, series_ids, st.session_state[start_date_key], st.session_state[end_date_key], include_recession_bands=st.session_state[show_recession_key])
+def plot_ffr_pce(data_df, show_recession, *_):
+    recession_data = data_df.get(config.USREC_SERIES_ID) if data_df is not None and config.USREC_SERIES_ID in data_df.columns else None
+    return plotters.create_ffr_pce_comparison_plot(data_df, config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_index"], config.FFR_PCE_THRESHOLD, recession_data, show_recession)
+def display_ffr_pce_metrics(data_df, _):
+    if data_df is not None and config.FFR_VS_PCE_SERIES_IDS["ffr"] in data_df.columns and config.FFR_VS_PCE_SERIES_IDS["core_pce_index"] in data_df.columns:
+        temp_df = data_df.copy(); temp_df.sort_index(inplace=True)
+        pce_yoy = temp_df[config.FFR_VS_PCE_SERIES_IDS["core_pce_index"]].pct_change(periods=12) * 100
+        temp_df['PCE_YoY_Calc'] = pce_yoy
+        temp_df.dropna(subset=[config.FFR_VS_PCE_SERIES_IDS["ffr"], 'PCE_YoY_Calc'], inplace=True)
+        if not temp_df.empty:
+            diff = temp_df[config.FFR_VS_PCE_SERIES_IDS["ffr"]].iloc[-1] - temp_df['PCE_YoY_Calc'].iloc[-1]
+            st.metric(f"Latest Difference (FFR - Core PCE YoY Calc.)", f"{diff:.2f}%", delta_color=("inverse" if diff < config.FFR_PCE_THRESHOLD else "normal"))
+            st.caption(f"Threshold: {config.FFR_PCE_THRESHOLD}%. Current difference is {'above' if diff > config.FFR_PCE_THRESHOLD else 'at or below'} threshold.")
+        else: st.caption("N/A (No overlapping data for metric).")
+    else: st.caption("N/A (Data missing for metric).")
+if config.fred: fred_section_ui("ffr_pce", "💰 Fed Funds Rate vs. Core PCE Inflation", f"Visualizes FFR vs Core PCE YoY (from index). Gap colored if FFR - PCE YoY > {config.FFR_PCE_THRESHOLD}%.", fetch_ffr_pce_logic, plot_ffr_pce, display_ffr_pce_metrics)
+else: st.divider(); st.header("💰 Fed Funds Rate vs. Core PCE Inflation"); st.error(config.fred_error_message)
 
-plot_placeholder_ffr_pce = st.empty()
-current_diff_placeholder_ffr_pce = st.empty() 
-
-if config.fred is None:
-    with plot_placeholder_ffr_pce.container(): 
-        st.error(config.fred_error_message or "FRED API client is not initialized. Cannot display this chart.")
-else:
-    fetch_ffr_pce_button = st.button("Fetch/Refresh Fed Funds vs Core PCE Data", key="ffr_pce_button", type="primary")
-
-    if fetch_ffr_pce_button:
-        st.session_state.ffr_pce_data = None 
-        st.session_state.ffr_pce_error = None 
-        st.session_state.ffr_pce_calculated = True 
-        st.session_state.current_ffr_pce_diff = None 
-
-        series_to_fetch_ffr_pce = [
-            config.FFR_VS_PCE_SERIES_IDS["ffr"], 
-            config.FFR_VS_PCE_SERIES_IDS["core_pce_index"] 
-        ]
-        with st.spinner("Fetching Fed Funds Rate and Core PCE Index data from FRED..."):
-            ffr_pce_data_result, error_msg_ffr_pce = data_fetchers.get_multiple_fred_data(
-                _fred_instance=config.fred,
-                series_ids=series_to_fetch_ffr_pce
-            )
-            st.session_state.ffr_pce_data = ffr_pce_data_result 
-            st.session_state.ffr_pce_error = error_msg_ffr_pce
-
-            if error_msg_ffr_pce:
-                if ffr_pce_data_result is not None and not ffr_pce_data_result.empty:
-                    plot_placeholder_ffr_pce.warning(f"FFR vs PCE Data Warning: {error_msg_ffr_pce}")
-                else: 
-                    plot_placeholder_ffr_pce.error(f"FFR vs PCE Data Error: {error_msg_ffr_pce}")
-            
-            if ffr_pce_data_result is not None and not ffr_pce_data_result.empty:
-                temp_df_ffr_pce = ffr_pce_data_result.copy()
-                ffr_col_name = config.FFR_VS_PCE_SERIES_IDS["ffr"]
-                pce_index_col_name = config.FFR_VS_PCE_SERIES_IDS["core_pce_index"]
-                
-                if ffr_col_name in temp_df_ffr_pce.columns and pce_index_col_name in temp_df_ffr_pce.columns:
-                    temp_df_ffr_pce.sort_index(inplace=True) 
-                    pce_yoy_calculated_col_name = 'PCE_YoY_Calculated' 
-                    temp_df_ffr_pce[pce_yoy_calculated_col_name] = temp_df_ffr_pce[pce_index_col_name].pct_change(periods=12) * 100
-                    
-                    temp_df_ffr_pce.dropna(subset=[ffr_col_name, pce_yoy_calculated_col_name], inplace=True)
-                    
-                    if not temp_df_ffr_pce.empty:
-                        latest_ffr_val = temp_df_ffr_pce[ffr_col_name].iloc[-1]
-                        latest_pce_yoy_val = temp_df_ffr_pce[pce_yoy_calculated_col_name].iloc[-1]
-                        st.session_state.current_ffr_pce_diff = latest_ffr_val - latest_pce_yoy_val
-                    else:
-                        st.session_state.current_ffr_pce_diff = "N/A (No overlapping data after YoY calc)"
-                else:
-                    missing_cols_str = []
-                    if ffr_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(ffr_col_name)
-                    if pce_index_col_name not in temp_df_ffr_pce.columns: missing_cols_str.append(pce_index_col_name) 
-                    st.session_state.current_ffr_pce_diff = f"N/A (Missing source columns: {', '.join(missing_cols_str)})" 
-            elif not error_msg_ffr_pce: 
-                 st.session_state.current_ffr_pce_diff = "N/A (Source data series empty)"
-
-    with plot_placeholder_ffr_pce.container():
-        if st.session_state.get('ffr_pce_calculated'): 
-            if not (st.session_state.ffr_pce_error and (st.session_state.ffr_pce_data is None or st.session_state.ffr_pce_data.empty)):
-                fig_ffr_pce = plotters.create_ffr_pce_comparison_plot(
-                    st.session_state.ffr_pce_data, 
-                    ffr_series_id=config.FFR_VS_PCE_SERIES_IDS["ffr"],
-                    pce_index_series_id=config.FFR_VS_PCE_SERIES_IDS["core_pce_index"], 
-                    threshold=config.FFR_PCE_THRESHOLD
-                )
-                st.plotly_chart(fig_ffr_pce, use_container_width=True)
-        else: 
-            st.info("Click 'Fetch/Refresh Fed Funds vs Core PCE Data' to load and display the chart.")
-
-    with current_diff_placeholder_ffr_pce.container():
-        if st.session_state.get('ffr_pce_calculated') and st.session_state.current_ffr_pce_diff is not None:
-            if isinstance(st.session_state.current_ffr_pce_diff, (float, int, np.number)): 
-                st.metric(
-                    label=f"Latest Difference ({config.FFR_VS_PCE_NAMES['ffr']} - Core PCE YoY Calc.)", 
-                    value=f"{st.session_state.current_ffr_pce_diff:.2f}%"
-                )
-                if st.session_state.current_ffr_pce_diff > config.FFR_PCE_THRESHOLD:
-                    st.caption(f"⚠️ Difference is above the {config.FFR_PCE_THRESHOLD}% threshold.")
-                else:
-                    st.caption(f"✅ Difference is at or below the {config.FFR_PCE_THRESHOLD}% threshold.")
-            else: 
-                st.write(f"**Latest Difference:** {st.session_state.current_ffr_pce_diff}")
+# --- Section 6: Gold vs. 10Y Real Yield ---
+def fetch_gold_ry_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, *_):
+    series_ids = [config.GOLD_VS_REAL_YIELD_SERIES_IDS["gold"], config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]]
+    with st.spinner("Fetching Gold & 10Y Real Yield data..."):
+        st.session_state[data_key], st.session_state[error_key] = data_fetchers.get_multiple_fred_data(config.fred, series_ids, st.session_state[start_date_key], st.session_state[end_date_key], include_recession_bands=st.session_state[show_recession_key])
+def plot_gold_ry(data_df, show_recession, *_):
+    recession_data = data_df.get(config.USREC_SERIES_ID) if data_df is not None and config.USREC_SERIES_ID in data_df.columns else None
+    return plotters.create_gold_vs_real_yield_plot(data_df, config.GOLD_VS_REAL_YIELD_SERIES_IDS["gold"], config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"], recession_data, show_recession)
+def display_gold_ry_metrics(data_df, _):
+    if data_df is not None:
+        latest_gold_val = data_df[config.GOLD_VS_REAL_YIELD_SERIES_IDS["gold"]].dropna().iloc[-1] if config.GOLD_VS_REAL_YIELD_SERIES_IDS["gold"] in data_df.columns and not data_df[config.GOLD_VS_REAL_YIELD_SERIES_IDS["gold"]].dropna().empty else "N/A"
+        latest_ry_val = data_df[config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]].dropna().iloc[-1] if config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"] in data_df.columns and not data_df[config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]].dropna().empty else "N/A"
+        col1, col2 = st.columns(2)
+        col1.metric("Latest Gold Price", f"${latest_gold_val:,.2f}" if isinstance(latest_gold_val, (float,int)) else latest_gold_val)
+        col2.metric("Latest 10Y Real Yield", f"{latest_ry_val:.2f}%" if isinstance(latest_ry_val, (float,int)) else latest_ry_val)
+if config.fred: fred_section_ui("gold_ry", "🪙 Gold vs. 10Y Real Yield", "Plots Gold Price against the 10-Year Treasury Inflation-Indexed Security yield.", fetch_gold_ry_logic, plot_gold_ry, display_gold_ry_metrics)
+else: st.divider(); st.header("🪙 Gold vs. 10Y Real Yield"); st.error(config.fred_error_message)
 
 
 # --- Ticker Reference Table & Footer ---
 st.divider()
-with st.expander("Show Example Ticker Symbols (Yahoo Finance)"):
-    st.dataframe(
-        config.ticker_df, use_container_width=True, hide_index=True,
-        column_config={
-            "Asset Class": st.column_config.TextColumn("Asset Class"),
-            "Description": st.column_config.TextColumn("Description"),
-            "Yahoo Ticker": st.column_config.TextColumn("Yahoo Ticker"),
-        }
-    )
-st.divider()
-footer_html_content = utils.generate_footer_html(config.YOUR_NAME, config.LINKEDIN_URL, config.LINKEDIN_SVG)
-st.markdown(footer_html_content, unsafe_allow_html=True)
-st.caption("Market data sourced from Yahoo Finance via yfinance library. Economic data sourced from FRED® (Federal Reserve Economic Data) via fredapi library. Data may be delayed.")
+with st.expander("Show Example Ticker Symbols (Yahoo Finance)"): st.dataframe(config.ticker_df, use_container_width=True, hide_index=True, column_config={"Asset Class": st.column_config.TextColumn("Asset Class"), "Description": st.column_config.TextColumn("Description"), "Yahoo Ticker": st.column_config.TextColumn("Yahoo Ticker")})
+st.divider(); st.markdown(utils.generate_footer_html(config.YOUR_NAME, config.LINKEDIN_URL, config.LINKEDIN_SVG), unsafe_allow_html=True)
+st.caption("Market data from Yahoo Finance (yfinance). Economic data from FRED® (fredapi). Data may be delayed.")
 

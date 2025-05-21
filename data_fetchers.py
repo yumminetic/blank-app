@@ -9,180 +9,115 @@ import yfinance as yf
 from datetime import datetime, timedelta
 import traceback
 import numpy as np
-
-# Import constants from config
-# ROLLING_WINDOW is no longer imported directly here for default, it's passed as an argument.
-# YEARS_OF_DATA was renamed to YEARS_OF_DATA_CORR in config.py
-import config # Import the whole module to access its attributes like config.YEARS_OF_DATA_CORR
+import config 
 
 @st.cache_data
-def calculate_rolling_correlation(ticker1, ticker2, window, years=config.YEARS_OF_DATA_CORR): # window is now a required argument
-    """Calculates rolling correlation (uses yfinance)."""
+def calculate_rolling_correlation(ticker1, ticker2, window, years=config.YEARS_OF_DATA_CORR):
     print(f"Executing: calculate_rolling_correlation for {ticker1} vs {ticker2} with window {window}...")
     end_date = datetime.now()
-    # Buffer needs to account for the passed 'window'
     start_date = end_date - timedelta(days=years*365 + window + 50) 
     try:
         data = yf.download([ticker1, ticker2], start=start_date, end=end_date, progress=False)
-        if data is None or data.empty:
-            return None, f"Failed to download data for {ticker1} or {ticker2}."
-        if 'Close' not in data.columns:
-            return None, "Could not find 'Close' price column in downloaded data."
-
+        if data is None or data.empty: return None, f"Failed to download data for {ticker1} or {ticker2}."
+        if 'Close' not in data.columns: return None, "Could not find 'Close' price column."
         close_data = data.get('Close', pd.DataFrame())
-        if close_data.empty:
-            return None, f"Could not retrieve 'Close' price data for {ticker1} or {ticker2}."
-
+        if close_data.empty: return None, f"Could not retrieve 'Close' price data."
         close_data.ffill(inplace=True)
-        missing_tickers = []
-        if ticker1 not in close_data.columns or close_data[ticker1].isnull().all():
-            missing_tickers.append(ticker1)
-        if ticker2 not in close_data.columns or close_data[ticker2].isnull().all():
-            missing_tickers.append(ticker2)
-        if missing_tickers:
-            return None, f"Could not find sufficient data for ticker(s): {', '.join(missing_tickers)}."
-
+        missing_tickers = [t for t in [ticker1, ticker2] if t not in close_data.columns or close_data[t].isnull().all()]
+        if missing_tickers: return None, f"Could not find sufficient data for ticker(s): {', '.join(missing_tickers)}."
         returns = close_data.pct_change().dropna()
-        if ticker1 not in returns.columns or ticker2 not in returns.columns or returns.empty:
-            return None, f"Could not calculate returns for {ticker1} or {ticker2}."
-        if returns[ticker1].isnull().all() or returns[ticker2].isnull().all():
-            return None, f"Returns data contains only NaNs for {ticker1} or {ticker2}."
-        
-        # Check if enough data points for the *passed* rolling window
-        if len(returns) < window:
-            return None, f"Not enough data points ({len(returns)}) for the specified {window}-day rolling window."
-
+        if not (ticker1 in returns.columns and ticker2 in returns.columns) or returns.empty: return None, f"Could not calculate returns."
+        if returns[ticker1].isnull().all() or returns[ticker2].isnull().all(): return None, f"Returns data contains only NaNs."
+        if len(returns) < window: return pd.DataFrame(), f"Not enough data points ({len(returns)}) for the {window}-day window." # Return empty df for plotter
         rolling_corr = returns[ticker1].rolling(window=window).corr(returns[ticker2]).dropna()
         rolling_corr.name = f'{window}d Rolling Corr'
-        print(f"Successfully calculated rolling correlation. Shape: {rolling_corr.shape}")
-        return rolling_corr, None # Data, No error message
+        return rolling_corr, None 
     except Exception as e:
-        print(f"Error calculating rolling correlation for {ticker1}/{ticker2}: {e}")
-        print(traceback.format_exc())
-        return None, f"An error occurred while calculating correlation for {ticker1}/{ticker2}: {e}"
+        print(f"Error calculating rolling correlation for {ticker1}/{ticker2}: {e}\n{traceback.format_exc()}")
+        return None, f"An error occurred: {e}"
 
 @st.cache_data
 def get_expiration_dates(ticker):
-    """Fetches option expiration dates for a given ticker using yfinance."""
-    if not ticker:
-        return None, "Ticker symbol cannot be empty."
+    if not ticker: return None, "Ticker symbol cannot be empty."
     try:
         stock = yf.Ticker(ticker)
         expirations = stock.options
-        if not expirations:
-            return None, f"No options expiration dates found for ticker: {ticker}."
-        return list(expirations), None
+        return list(expirations) if expirations else None, None if expirations else f"No options dates found for {ticker}."
     except Exception as e:
-        print(f"Error fetching expirations for {ticker}: {e}")
-        return None, f"An error occurred while fetching expiration dates for {ticker}. It might be an invalid ticker or a temporary issue: {e}"
+        return None, f"Error fetching expirations for {ticker}: {e}"
 
 @st.cache_data
 def get_option_chain_data(ticker, expiry_date):
-    """Fetches the option chain (calls and puts) and current price for a ticker and expiry date."""
-    if not ticker or not expiry_date:
-        return None, None, None, "Ticker symbol or expiration date is missing."
+    if not ticker or not expiry_date: return None, None, None, "Ticker or expiration date missing."
     try:
-        print(f"Fetching option chain for {ticker} expiring {expiry_date}...")
         stock = yf.Ticker(ticker)
         chain = stock.option_chain(expiry_date)
-        calls_df = chain.calls
-        puts_df = chain.puts
         info = stock.info
-        current_price = info.get('currentPrice', info.get('regularMarketPrice', info.get('previousClose')))
-
-        if current_price is None or not isinstance(current_price, (int, float, np.number)):
-            print(f"Warning: Could not determine a valid current price for {ticker}. Price data might be delayed or unavailable.")
-            current_price = None
-        if calls_df.empty and puts_df.empty:
-            return None, None, current_price, f"No options data found for {ticker} on {expiry_date}. The ticker might not have options or data is unavailable for this date."
-        print(f"Fetched chain for {ticker} {expiry_date}. Calls: {len(calls_df)}, Puts: {len(puts_df)}, Price: {current_price}")
-        return calls_df, puts_df, current_price, None
+        price = info.get('currentPrice', info.get('regularMarketPrice', info.get('previousClose')))
+        if not (chain.calls.empty and chain.puts.empty): return chain.calls, chain.puts, price, None
+        return None, None, price, f"No options data for {ticker} on {expiry_date}."
     except Exception as e:
-        print(f"Error fetching option chain for {ticker} on {expiry_date}: {e}")
-        print(traceback.format_exc())
-        return None, None, None, f"An error occurred fetching the option chain for {ticker} on {expiry_date}: {e}"
+        return None, None, None, f"Error fetching option chain for {ticker} on {expiry_date}: {e}"
 
 @st.cache_data(show_spinner=False)
-def get_fred_data(_fred_instance, series_id):
-    """Fetches time series data for a given FRED series ID."""
-    if not _fred_instance:
-        return None, "FRED API client is not initialized. Check API key configuration."
-    if not series_id:
-        return None, "FRED Series ID cannot be empty."
+def get_fred_data(_fred_instance, series_id, start_date=None, end_date=None):
+    """Fetches time series data for a given FRED series ID, with optional date range."""
+    if not _fred_instance: return None, "FRED API client not initialized."
+    if not series_id: return None, "FRED Series ID cannot be empty."
     try:
-        print(f"Fetching FRED data for series ID: {series_id}...")
-        data = _fred_instance.get_series(series_id)
-        data = data.dropna() # Remove trailing NaNs
-        if data.empty:
-            print(f"Warning: FRED data for {series_id} is empty after removing NaNs.")
-        print(f"Successfully fetched FRED data for {series_id}. Shape: {data.shape}")
-        return data, None
+        print(f"Fetching FRED data for {series_id} from {start_date} to {end_date}")
+        data = _fred_instance.get_series(series_id, observation_start=start_date, observation_end=end_date)
+        data = data.dropna() 
+        print(f"Fetched FRED data for {series_id}. Shape: {data.shape}")
+        return data, None if not data.empty else f"No data returned for {series_id} in range."
     except Exception as e:
-        error_msg = f"Failed to fetch data for FRED series '{series_id}': {e}"
-        print(error_msg)
-        print(traceback.format_exc())
-        return None, f"Could not fetch data for FRED series '{series_id}'. Verify ID and API connection: {e}"
+        return None, f"Failed to fetch FRED series '{series_id}': {e}"
 
 @st.cache_data(show_spinner=False)
 def get_fred_series_info(_fred_instance, series_id):
-    """Fetches metadata/information for a specific FRED series ID."""
-    if not _fred_instance:
-        return None, "FRED API client is not initialized."
-    if not series_id:
-        return None, "FRED Series ID cannot be empty."
+    if not _fred_instance: return None, "FRED API client not initialized."
+    if not series_id: return None, "FRED Series ID cannot be empty."
     try:
-        print(f"Fetching FRED series info for: {series_id}...")
-        info = _fred_instance.get_series_info(series_id)
-        print(f"Successfully fetched info for FRED series {series_id}.")
-        return info, None
+        return _fred_instance.get_series_info(series_id), None
     except Exception as e:
-        error_msg = f"Failed to fetch metadata for FRED series '{series_id}': {e}"
-        print(error_msg)
-        return None, f"Could not fetch metadata for FRED series '{series_id}': {e}"
+        return None, f"Failed to fetch metadata for FRED series '{series_id}': {e}"
 
 @st.cache_data(show_spinner=False)
-def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date=None):
-    """Fetches data for multiple FRED series IDs, merges, and forward fills them."""
-    if not _fred_instance:
-        return None, "FRED API client is not initialized."
-    if not series_ids:
-        return None, "No FRED Series IDs provided."
+def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date=None, include_recession_bands=False):
+    """Fetches data for multiple FRED series IDs, merges, ffills, and optionally adds recession bands."""
+    if not _fred_instance: return None, "FRED API client not initialized."
+    if not series_ids: return None, "No FRED Series IDs provided."
 
     all_series_data = {}
     errors = {}
-    if start_date and end_date:
-        print(f"Fetching FRED multi-series data from {start_date.date()} to {end_date.date()}")
-    else:
-        print("Fetching all available FRED multi-series data (no date range specified).")
+    
+    current_series_ids = list(series_ids) # Make a mutable copy
+    if include_recession_bands and config.USREC_SERIES_ID not in current_series_ids:
+        current_series_ids.append(config.USREC_SERIES_ID)
 
-    for series_id in series_ids:
+    for series_id in current_series_ids:
         try:
-            print(f"Fetching FRED data for series: {series_id}...")
-            s_data = _fred_instance.get_series(series_id, observation_start=start_date, observation_end=end_date) if start_date and end_date else _fred_instance.get_series(series_id)
+            print(f"Fetching FRED: {series_id} from {start_date} to {end_date}")
+            s_data = _fred_instance.get_series(series_id, observation_start=start_date, observation_end=end_date)
             if not s_data.empty:
                 all_series_data[series_id] = s_data
-                print(f"Successfully fetched {series_id}, shape: {s_data.shape}")
             else:
-                print(f"Warning: No data returned for {series_id} in the specified range/period.")
+                print(f"Warning: No data for {series_id} in range.")
         except Exception as e:
-            error_msg = f"Failed to fetch {series_id}: {e}"
-            print(error_msg)
-            errors[series_id] = error_msg
+            errors[series_id] = str(e)
+            print(f"Error fetching {series_id}: {e}")
 
     if not all_series_data:
-        error_details = f"Errors: {errors}" if errors else "Unknown reason."
-        return None, f"Failed to fetch data for *any* of the requested series. {error_details}"
+        return None, f"Failed to fetch data for any requested series. Errors: {errors if errors else 'Unknown'}"
+    
     try:
         combined_df = pd.concat(all_series_data, axis=1, join='outer')
+        # Forward fill, then back fill to handle NaNs at the beginning after join
         combined_df.ffill(inplace=True)
-        print("Applied forward fill (ffill) to combined FRED data.")
-        combined_df.dropna(how='all', inplace=True) 
-        print(f"Combined FRED data shape after ffill: {combined_df.shape}")
-        if errors: 
-            return combined_df, f"Could not fetch data for some series: {errors}"
-        return combined_df, None
+        combined_df.bfill(inplace=True) 
+        # No dropna(how='all') here, as recession bands might be sparse but still desired with other data
+        print(f"Combined FRED data shape after fill: {combined_df.shape}")
+        return combined_df, f"Partial success. Errors: {errors}" if errors else None
     except Exception as e:
-        print(f"Error combining or filling FRED series: {e}")
-        print(traceback.format_exc())
-        return None, f"Error occurred while combining or filling FRED data: {e}"
+        return None, f"Error combining/filling FRED data: {e}"
 

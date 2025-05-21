@@ -19,7 +19,7 @@ FFR_PCE_THRESHOLD = 2.0
 
 # --- Default Ticker Symbols ---
 DEFAULT_TICKER_1_CORR = 'EURUSD=X'
-DEFAULT_TICKER_2_CORR = 'GLD'
+DEFAULT_TICKER_2_CORR = 'GLD' # GLD is also our yfinance gold ticker
 DEFAULT_TICKER_SKEW = 'AAPL'
 DEFAULT_FRED_SERIES_NAME = "Effective Federal Funds Rate (Daily)"
 
@@ -73,22 +73,31 @@ FRED_SERIES_EXAMPLES = {
     "Initial Claims (Weekly)": "ICSA", "10-Year Treasury Constant Maturity Rate (Daily)": "DGS10",
     "M1 Money Stock (Weekly)": "WM1NS", "M2 Money Stock (Weekly)": "WM2NS",
     "Industrial Production Index (Monthly)": "INDPRO", "Retail Sales - Total (Monthly)": "RSAFS",
-    "Gold Price (London Bullion, Daily)": "GOLDAMGBD228NLBM", "VIX (Volatility Index, Daily)": "VIXCLS",
+    # "Gold Price (London Bullion, Daily)": "GOLDAMGBD228NLBM", # Replaced by yfinance
+    "VIX (Volatility Index, Daily)": "VIXCLS",
     "Effective Federal Funds Rate (Monthly Avg)": "FEDFUNDS",
-    "10-Year Treasury Inflation-Indexed Security (Daily)": "DFII10", # For Real Yield
-    "NBER based Recession Indicators (Monthly)": "USRECM" # NBER Recession Indicators (USRECM for monthly)
+    "10-Year Treasury Inflation-Indexed Security (Daily)": "DFII10", 
+    "NBER based Recession Indicators (Monthly)": "USRECM" 
 }
 fred_series_options = list(FRED_SERIES_EXAMPLES.keys())
 
-USREC_SERIES_ID = "USRECM" # NBER based Recession Indicators for the United States (Monthly)
+USREC_SERIES_ID = "USRECM" 
 
 FED_JAWS_SERIES_IDS = ['DFEDTARU', 'IORB', 'DPCREDIT', 'SOFR', 'DFF', 'OBFR', 'DFEDTARL']
 
 FFR_VS_PCE_SERIES_IDS = {"ffr": "FEDFUNDS", "core_pce_index": "PCEPILFE"}
 FFR_VS_PCE_NAMES = {"ffr": "Effective Federal Funds Rate (Monthly)", "core_pce_index": "Core PCE Price Index (Monthly)", "core_pce_yoy_calculated": "Core PCE Inflation YoY (Calculated)"}
 
-GOLD_VS_REAL_YIELD_SERIES_IDS = {"gold": "GOLDAMGBD228NLBM", "real_yield_10y": "DFII10"}
-GOLD_VS_REAL_YIELD_NAMES = {"gold": "Gold Price (London Bullion, Daily)", "real_yield_10y": "10-Year Treasury Inflation-Indexed Security (Daily)"}
+# Gold vs. Real Yield: Gold from yfinance, Real Yield from FRED
+GOLD_YFINANCE_TICKER = "GLD" # Using SPDR Gold Shares ETF
+GOLD_VS_REAL_YIELD_SERIES_IDS = {
+    "gold_yfinance": GOLD_YFINANCE_TICKER, # Key for yfinance gold
+    "real_yield_10y": "DFII10" # FRED series for 10Y Real Yield
+}
+GOLD_VS_REAL_YIELD_NAMES = {
+    "gold_yfinance": f"Gold Price ({GOLD_YFINANCE_TICKER} from yfinance)", 
+    "real_yield_10y": "10-Year Treasury Inflation-Indexed Security (Daily, FRED)"
+}
 
 # Default date range for FRED charts (e.g., last 20 years)
 DEFAULT_FRED_START_DATE = datetime.now() - timedelta(days=20*365)

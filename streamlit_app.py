@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, date 
+from datetime import datetime, date, timedelta # Added timedelta here
 import traceback 
 import yfinance as yf 
 import config, data_fetchers, plotters, utils
@@ -36,7 +36,7 @@ st.markdown("<hr/>", unsafe_allow_html=True)
 
 
 # --- Initialize Session State ---
-default_fred_start = date(2000, 1, 1) 
+default_fred_start = date.today() - timedelta(days=20*365) # Used timedelta
 default_fred_end = date.today()
 
 # Correlation
@@ -247,7 +247,7 @@ plot_placeholder_jaws = st.empty()
 if config.fred:
     st.checkbox("Show NBER Recession Bands", value=st.session_state.fed_jaws_show_recession, key="fed_jaws_show_recession")
     if st.button("Fetch/Refresh Fed's Jaws Data", key="jaws_button", type="primary"):
-        st.session_state.fed_jaws_calculated = True; end_j = datetime.now(); start_j = end_j - timedelta(days=config.FED_JAWS_DURATION_DAYS)
+        st.session_state.fed_jaws_calculated = True; end_j = datetime.now(); start_j = end_j - timedelta(days=config.FED_JAWS_DURATION_DAYS) # Used timedelta
         with st.spinner(f"Fetching Fed's Jaws data..."):
             st.session_state.fed_jaws_data, st.session_state.fed_jaws_error = data_fetchers.get_multiple_fred_data(config.fred, list(config.FED_JAWS_SERIES_IDS), start_j, end_j, include_recession_bands=st.session_state.fed_jaws_show_recession)
             if st.session_state.fed_jaws_error: plot_placeholder_jaws.warning(f"Jaws Data Warning: {st.session_state.fed_jaws_error}")

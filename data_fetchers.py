@@ -28,7 +28,7 @@ def calculate_rolling_correlation(ticker1, ticker2, window, years=config.YEARS_O
         returns = close_data.pct_change().dropna()
         if not (ticker1 in returns.columns and ticker2 in returns.columns) or returns.empty: return None, f"Could not calculate returns."
         if returns[ticker1].isnull().all() or returns[ticker2].isnull().all(): return None, f"Returns data contains only NaNs."
-        if len(returns) < window: return pd.DataFrame(), f"Not enough data points ({len(returns)}) for the {window}-day window." # Return empty df for plotter
+        if len(returns) < window: return pd.DataFrame(), f"Not enough data points ({len(returns)}) for the {window}-day window." 
         rolling_corr = returns[ticker1].rolling(window=window).corr(returns[ticker2]).dropna()
         rolling_corr.name = f'{window}d Rolling Corr'
         return rolling_corr, None 
@@ -61,7 +61,6 @@ def get_option_chain_data(ticker, expiry_date):
 
 @st.cache_data(show_spinner=False)
 def get_fred_data(_fred_instance, series_id, start_date=None, end_date=None):
-    """Fetches time series data for a given FRED series ID, with optional date range."""
     if not _fred_instance: return None, "FRED API client not initialized."
     if not series_id: return None, "FRED Series ID cannot be empty."
     try:
@@ -84,40 +83,56 @@ def get_fred_series_info(_fred_instance, series_id):
 
 @st.cache_data(show_spinner=False)
 def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date=None, include_recession_bands=False):
-    """Fetches data for multiple FRED series IDs, merges, ffills, and optionally adds recession bands."""
     if not _fred_instance: return None, "FRED API client not initialized."
     if not series_ids: return None, "No FRED Series IDs provided."
-
-    all_series_data = {}
-    errors = {}
-    
-    current_series_ids = list(series_ids) # Make a mutable copy
+    all_series_data = {}; errors = {}
+    current_series_ids = list(series_ids) 
     if include_recession_bands and config.USREC_SERIES_ID not in current_series_ids:
         current_series_ids.append(config.USREC_SERIES_ID)
-
     for series_id in current_series_ids:
         try:
             print(f"Fetching FRED: {series_id} from {start_date} to {end_date}")
             s_data = _fred_instance.get_series(series_id, observation_start=start_date, observation_end=end_date)
-            if not s_data.empty:
-                all_series_data[series_id] = s_data
-            else:
-                print(f"Warning: No data for {series_id} in range.")
-        except Exception as e:
-            errors[series_id] = str(e)
-            print(f"Error fetching {series_id}: {e}")
-
-    if not all_series_data:
-        return None, f"Failed to fetch data for any requested series. Errors: {errors if errors else 'Unknown'}"
-    
+            if not s_data.empty: all_series_data[series_id] = s_data
+            else: print(f"Warning: No data for {series_id} in range.")
+        except Exception as e: errors[series_id] = str(e); print(f"Error fetching {series_id}: {e}")
+    if not all_series_data: return None, f"Failed to fetch data for any requested series. Errors: {errors if errors else 'Unknown'}"
     try:
         combined_df = pd.concat(all_series_data, axis=1, join='outer')
-        # Forward fill, then back fill to handle NaNs at the beginning after join
-        combined_df.ffill(inplace=True)
-        combined_df.bfill(inplace=True) 
-        # No dropna(how='all') here, as recession bands might be sparse but still desired with other data
+        combined_df.ffill(inplace=True); combined_df.bfill(inplace=True) 
         print(f"Combined FRED data shape after fill: {combined_df.shape}")
         return combined_df, f"Partial success. Errors: {errors}" if errors else None
-    except Exception as e:
-        return None, f"Error combining/filling FRED data: {e}"
+    except Exception as e: return None, f"Error combining/filling FRED data: {e}"
 
+@st.cache_data(show_spinner=True) # Show spinner for this yfinance call
+def get_index_valuation_ratios(ticker_symbol):
+    """Fetches current valuation ratios for a given index ticker using yfinance .info."""
+    if not ticker_symbol:
+        return None, "Ticker symbol cannot be empty."
+    try:
+        print(f"Fetching .info for index ticker: {ticker_symbol}")
+        ticker = yf.Ticker(ticker_symbol)
+        info = ticker.info
+        
+        # Check if info was successfully fetched
+        if not info or info.get('regularMarketPrice') is None: # A basic check if info is populated
+             return None, f"Could not retrieve detailed info for {ticker_symbol}. It might be an invalid ticker or data is temporarily unavailable."
+
+        ratios = {
+            "Symbol": ticker_symbol,
+            "Name": info.get('shortName', info.get('longName', ticker_symbol)),
+            "Trailing P/E": info.get('trailingPE'),
+            "Forward P/E": info.get('forwardPE'),
+            "Price/Book": info.get('priceToBook'),
+            "Dividend Yield": info.get('dividendYield')
+        }
+        # Convert dividend yield to percentage string if it exists
+        if ratios["Dividend Yield"] is not None:
+            ratios["Dividend Yield"] = f"{ratios['Dividend Yield'] * 100:.2f}%"
+            
+        print(f"Successfully fetched valuation ratios for {ticker_symbol}.")
+        return ratios, None
+    except Exception as e:
+        print(f"Error fetching valuation ratios for {ticker_symbol}: {e}")
+        print(traceback.format_exc())
+        return None, f"An error occurred while fetching valuation ratios for {ticker_symbol}: {e}. Please check the ticker symbol."

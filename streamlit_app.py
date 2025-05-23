@@ -2,56 +2,45 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, date, timedelta # Added timedelta here
+from datetime import datetime, date, timedelta 
 import traceback 
 import yfinance as yf 
 import config, data_fetchers, plotters, utils
 
 st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide")
-# st.title("📊 Macro/Quantamental Dashboard") # Old title
-st.markdown("<h1 style='text-align: center; color: white;'>📊 Macro/Quantamental Dashboard</h1>", unsafe_allow_html=True) # Centered Title
-
+st.markdown("<h1 style='text-align: center; color: white;'>📊 Macro/Quantamental Dashboard</h1>", unsafe_allow_html=True) 
 
 # --- Tab Navigation ---
-# Define section titles and their corresponding anchor IDs
 sections = {
     "Correlation Calculator": "correlation_calculator",
     "IV Skew Viewer": "iv_skew_viewer",
+    "Index Valuation": "index_valuation_ratios", # New Section
     "FRED Single Series": "fred_single_viewer",
-    "Fed's Jaws": "fed_jaws_chart", # Key with apostrophe
+    "Fed's Jaws": "fed_jaws_chart", 
     "FFR vs Core PCE": "ffr_pce_chart",
     "Gold vs Real Yield": "gold_real_yield_chart",
     "Ticker Reference": "ticker_reference"
 }
-
-# Create a horizontal list of links styled as tabs
 tab_links = []
 for title, anchor_id in sections.items():
-    # Added margin-bottom: 8px; for spacing when tabs wrap
     tab_links.append(f"<a href='#{anchor_id}' style='margin: 0 10px 8px 10px; padding: 8px 12px; text-decoration: none; color: #4F8BF9; font-weight: 500; border-radius: 5px; background-color: #f0f2f6; display: inline-block;' onmouseover='this.style.backgroundColor=\"#e0e2e6\"' onmouseout='this.style.backgroundColor=\"#f0f2f6\"'>{title}</a>")
-
-tabs_html = "<div style='text-align: center; margin-bottom: 25px; margin-top: 5px; line-height: 1.8;'>" + "".join(tab_links) + "</div>" # Added line-height to the container for overall spacing too
+tabs_html = "<div style='text-align: center; margin-bottom: 25px; margin-top: 5px; line-height: 1.8;'>" + "".join(tab_links) + "</div>" 
 st.markdown(tabs_html, unsafe_allow_html=True)
 st.markdown("<hr/>", unsafe_allow_html=True)
 
-
 # --- Initialize Session State ---
-default_fred_start = date.today() - timedelta(days=20*365) # Used timedelta
+default_fred_start = date.today() - timedelta(days=20*365) 
 default_fred_end = date.today()
 
-# Correlation
+# ... (Keep existing session state initializations for other sections) ...
 utils.init_state('rolling_corr_data', None); utils.init_state('rolling_corr_error', None) 
 utils.init_state('ticker1_calculated_corr', None); utils.init_state('ticker2_calculated_corr', None)
 utils.init_state('ticker1_input_corr', config.DEFAULT_TICKER_1_CORR); utils.init_state('ticker2_input_corr', config.DEFAULT_TICKER_2_CORR)
 utils.init_state('rolling_window_corr', config.DEFAULT_ROLLING_WINDOW_CORR)
 utils.init_state('corr_window_calculated', config.DEFAULT_ROLLING_WINDOW_CORR)
-
-# Skew
 utils.init_state('calls_data_skew', None); utils.init_state('puts_data_skew', None); utils.init_state('price_skew', None)
 utils.init_state('skew_error', None); utils.init_state('ticker_calculated_skew', None); utils.init_state('expiry_calculated_skew', None)
 utils.init_state('ticker_input_skew', config.DEFAULT_TICKER_SKEW); utils.init_state('expiry_input_skew', None) 
-
-# FRED Single
 utils.init_state('fred_single_data', None); utils.init_state('fred_single_error', None); utils.init_state('fred_single_calculated', False) 
 utils.init_state('fred_series_info', None); utils.init_state('fred_info_error', None); 
 utils.init_state('fred_series_id_calculated', None); utils.init_state('fred_series_name_calculated', None) 
@@ -59,37 +48,36 @@ utils.init_state('fred_series_name_input', config.DEFAULT_FRED_SERIES_NAME)
 utils.init_state('fred_single_start_date', default_fred_start) 
 utils.init_state('fred_single_end_date', default_fred_end)     
 utils.init_state('fred_single_show_recession', True)        
-
-# Fed Jaws
 utils.init_state('fed_jaws_data', None); utils.init_state('fed_jaws_error', None); utils.init_state('fed_jaws_calculated', False)
 utils.init_state('fed_jaws_show_recession', True) 
-
-# FFR vs Core PCE
 utils.init_state('ffr_pce_data', None); utils.init_state('ffr_pce_error', None); utils.init_state('ffr_pce_calculated', False)
 utils.init_state('current_ffr_pce_diff', None)
 utils.init_state('ffr_pce_start_date', default_fred_start) 
 utils.init_state('ffr_pce_end_date', default_fred_end)     
 utils.init_state('ffr_pce_show_recession', True)        
-
-# Gold vs Real Yield
 utils.init_state('gold_ry_data', None); utils.init_state('gold_ry_error', None); utils.init_state('gold_ry_calculated', False)
 utils.init_state('yfinance_gold_col_name_plotter', None) 
 utils.init_state('gold_ry_start_date', default_fred_start) 
 utils.init_state('gold_ry_end_date', default_fred_end)     
-utils.init_state('gold_ry_show_recession', True)        
+utils.init_state('gold_ry_show_recession', True)   
+
+# Index Valuation Ratios State
+utils.init_state('index_valuation_ticker_input', config.DEFAULT_INDEX_VALUATION_TICKER)
+utils.init_state('index_valuation_data', None)
+utils.init_state('index_valuation_error', None)
+utils.init_state('index_valuation_calculated_ticker', None)
+
 
 # --- Helper for Date Inputs ---
 def date_input_cols(start_date_key, end_date_key, section_key_suffix):
     col1, col2 = st.columns(2)
-    with col1:
-        st.session_state[start_date_key] = st.date_input("Start Date", value=st.session_state[start_date_key], key=f"date_widget_start_{section_key_suffix}")
-    with col2:
-        st.session_state[end_date_key] = st.date_input("End Date", value=st.session_state[end_date_key], key=f"date_widget_end_{section_key_suffix}")
+    with col1: st.session_state[start_date_key] = st.date_input("Start Date", value=st.session_state[start_date_key], key=f"date_widget_start_{section_key_suffix}")
+    with col2: st.session_state[end_date_key] = st.date_input("End Date", value=st.session_state[end_date_key], key=f"date_widget_end_{section_key_suffix}")
     return st.session_state[start_date_key], st.session_state[end_date_key]
 
 # --- Section 1: Rolling Correlation ---
 correlation_anchor_id = sections["Correlation Calculator"]
-st.markdown(f"<a name='{correlation_anchor_id}'></a>", unsafe_allow_html=True) # Anchor
+st.markdown(f"<a name='{correlation_anchor_id}'></a>", unsafe_allow_html=True) 
 st.header("📊 Rolling Correlation Calculator")
 st.write("Calculates the rolling correlation between the daily returns of two assets.")
 st.slider("Select Rolling Window (Days):", min_value=config.MIN_ROLLING_WINDOW_CORR, max_value=config.MAX_ROLLING_WINDOW_CORR, value=st.session_state.rolling_window_corr, step=1, key="rolling_window_corr")
@@ -119,7 +107,7 @@ with plot_placeholder_corr.container():
 
 # --- Section 2: Implied Volatility Skew ---
 iv_skew_anchor_id = sections["IV Skew Viewer"]
-st.markdown(f"<a name='{iv_skew_anchor_id}'></a>", unsafe_allow_html=True) # Anchor
+st.markdown(f"<a name='{iv_skew_anchor_id}'></a>", unsafe_allow_html=True) 
 st.divider(); st.header("📉 Implied Volatility Skew Viewer")
 st.write("Visualizes IV smile/skew. Zero IVs are interpolated.")
 st.session_state.ticker_input_skew = st.text_input("Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget").strip().upper()
@@ -154,34 +142,87 @@ with plot_placeholder_skew.container():
     elif st.session_state.skew_error and st.session_state.ticker_calculated_skew: pass
     else: st.info("Enter ticker, select expiry, and click 'Graph IV Skew'.")
 
+# --- Section: Index Valuation Ratios ---
+index_val_anchor_id = sections["Index Valuation"]
+st.markdown(f"<a name='{index_val_anchor_id}'></a>", unsafe_allow_html=True)
+st.divider()
+st.header("밸류에이션 Index Valuation Ratios") # Using a different emoji
+st.write("Displays current valuation ratios (P/E, Forward P/E, P/B, Dividend Yield) for major stock market indices using yfinance. Historical data for these ratios is not available via yfinance's `.info`.")
+
+index_valuation_ticker_input_val = st.text_input(
+    "Enter Index Ticker (e.g., ^GSPC, ^IXIC, ^DJI):",
+    value=st.session_state.index_valuation_ticker_input,
+    key="index_valuation_ticker_widget"
+)
+st.session_state.index_valuation_ticker_input = index_valuation_ticker_input_val.strip().upper() if isinstance(index_valuation_ticker_input_val, str) else config.DEFAULT_INDEX_VALUATION_TICKER
+
+valuation_placeholder = st.empty()
+if st.button("Fetch Valuation Ratios", key="fetch_valuation_ratios_button"):
+    ticker_to_fetch = st.session_state.index_valuation_ticker_input
+    st.session_state.index_valuation_calculated_ticker = ticker_to_fetch # Store for display
+    st.session_state.index_valuation_data = None # Reset
+    st.session_state.index_valuation_error = None # Reset
+
+    if ticker_to_fetch:
+        ratios_data, error_msg = data_fetchers.get_index_valuation_ratios(ticker_to_fetch)
+        st.session_state.index_valuation_data = ratios_data
+        st.session_state.index_valuation_error = error_msg
+        if error_msg:
+            valuation_placeholder.error(f"Valuation Data Error: {error_msg}")
+    else:
+        st.warning("Please enter an index ticker.")
+
+with valuation_placeholder.container():
+    if st.session_state.index_valuation_calculated_ticker and st.session_state.index_valuation_data:
+        data = st.session_state.index_valuation_data
+        st.subheader(f"Current Valuation for: {data.get('Name', st.session_state.index_valuation_calculated_ticker)}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(label="Trailing P/E", value=f"{data.get('Trailing P/E'):.2f}" if isinstance(data.get('Trailing P/E'), (float, int)) else "N/A")
+            st.metric(label="Price/Book", value=f"{data.get('Price/Book'):.2f}" if isinstance(data.get('Price/Book'), (float, int)) else "N/A")
+        with col2:
+            st.metric(label="Forward P/E", value=f"{data.get('Forward P/E'):.2f}" if isinstance(data.get('Forward P/E'), (float, int)) else "N/A")
+            st.metric(label="Dividend Yield", value=data.get('Dividend Yield', "N/A"))
+        
+        # Download button for the snapshot data
+        if data:
+            df_to_download_val = pd.DataFrame([data]) # Convert dict to DataFrame for CSV
+            csv_val = utils.convert_df_to_csv(df_to_download_val)
+            st.download_button(
+                label=f"Download Valuation Data for {st.session_state.index_valuation_calculated_ticker} (CSV)",
+                data=csv_val,
+                file_name=f"valuation_{st.session_state.index_valuation_calculated_ticker}.csv",
+                mime='text/csv',
+                key=f"download_valuation_{st.session_state.index_valuation_calculated_ticker}_csv"
+            )
+
+    elif st.session_state.index_valuation_error and st.session_state.index_valuation_calculated_ticker:
+        pass # Error already shown by button logic
+    else:
+        st.info("Enter an index ticker and click 'Fetch Valuation Ratios' to display current data.")
+
+
 # --- FRED Sections Common UI Elements ---
 def fred_section_ui(section_key_suffix, title_for_tab, header_text, description, series_fetch_logic, plot_function, display_metrics_logic=None, series_select_options=None, default_series_name_key=None, series_id_map=None):
-    # Use title_for_tab to get the anchor_id from the sections dictionary
-    anchor_id = sections.get(title_for_tab) # Get anchor_id using the tab display title
-    if anchor_id:
-        st.markdown(f"<a name='{anchor_id}'></a>", unsafe_allow_html=True)
-    
-    st.divider(); st.header(header_text); st.write(description) # Use separate header_text for display
+    anchor_id = sections.get(title_for_tab) 
+    if anchor_id: st.markdown(f"<a name='{anchor_id}'></a>", unsafe_allow_html=True)
+    st.divider(); st.header(header_text); st.write(description) 
     start_date_key, end_date_key = f"{section_key_suffix}_start_date", f"{section_key_suffix}_end_date"
     show_recession_key = f"{section_key_suffix}_show_recession"
     data_key, error_key, calculated_key = f"{section_key_suffix}_data", f"{section_key_suffix}_error", f"{section_key_suffix}_calculated"
-    
     date_input_cols(start_date_key, end_date_key, section_key_suffix) 
     st.checkbox("Show NBER Recession Bands", value=st.session_state[show_recession_key], key=f"recession_cb_{section_key_suffix}")
-
     if series_select_options: 
         try: idx = series_select_options.index(st.session_state[default_series_name_key])
         except ValueError: idx = 0; st.session_state[default_series_name_key] = series_select_options[0]
         st.session_state[default_series_name_key] = st.selectbox("Select FRED Series:", options=series_select_options, index=idx, key=f"selectbox_widget_{section_key_suffix}")
-    
     plot_placeholder = st.empty(); metric_placeholder = st.empty()
-
-    if st.button(f"Fetch/Refresh {header_text} Data", key=f"fetch_button_{section_key_suffix}", type="primary"): # Use header_text for button
+    if st.button(f"Fetch/Refresh {header_text} Data", key=f"fetch_button_{section_key_suffix}", type="primary"): 
         st.session_state[data_key], st.session_state[error_key] = None, None 
         st.session_state[calculated_key] = True 
         series_fetch_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, series_id_map, default_series_name_key)
         if st.session_state[error_key]: plot_placeholder.error(f"Data Error: {st.session_state[error_key]}")
-
     with plot_placeholder.container():
         if st.session_state[calculated_key] and st.session_state.get(data_key) is not None:
             yfinance_gold_col_name_for_plotter = st.session_state.get('yfinance_gold_col_name_plotter') if section_key_suffix == "gold_ry" else None
@@ -193,61 +234,50 @@ def fred_section_ui(section_key_suffix, title_for_tab, header_text, description,
                 st.download_button(label=f"Download {header_text} Data (CSV)", data=csv_data, file_name=f"{section_key_suffix}_data.csv", mime='text/csv', key=f"download_csv_{section_key_suffix}")
         elif st.session_state.get(error_key) and st.session_state[calculated_key]: pass 
         else: st.info(f"Select date range and click 'Fetch/Refresh {header_text} Data'.")
-    
     with metric_placeholder.container():
         if st.session_state[calculated_key] and display_metrics_logic:
             display_metrics_logic(st.session_state.get(data_key), section_key_suffix) 
 
 # --- Section 3: FRED Economic Data Viewer (Single Series) ---
 def fetch_single_fred_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, _, series_id_map, default_series_name_key):
-    series_name = st.session_state[default_series_name_key] 
-    series_id = series_id_map.get(series_name)
-    st.session_state.fred_series_id_calculated = series_id 
-    st.session_state.fred_series_name_calculated = series_name 
+    series_name = st.session_state[default_series_name_key]; series_id = series_id_map.get(series_name)
+    st.session_state.fred_series_id_calculated = series_id; st.session_state.fred_series_name_calculated = series_name 
     if not series_id: st.session_state[error_key] = "Invalid FRED series selection."; return
     with st.spinner(f"Fetching {series_name} ({series_id})..."):
         s_start, s_end, show_rec = st.session_state[start_date_key], st.session_state[end_date_key], st.session_state[show_recession_key]
-        df = pd.DataFrame()
-        s_data, err = data_fetchers.get_fred_data(config.fred, series_id, s_start, s_end)
+        df = pd.DataFrame(); s_data, err = data_fetchers.get_fred_data(config.fred, series_id, s_start, s_end)
         if s_data is not None: df[series_id] = s_data
         st.session_state.fred_series_info, st.session_state.fred_info_error = data_fetchers.get_fred_series_info(config.fred, series_id)
         if show_rec:
             rec_data, rec_err = data_fetchers.get_fred_data(config.fred, config.USREC_SERIES_ID, s_start, s_end)
             if rec_data is not None: df[config.USREC_SERIES_ID] = rec_data
             if rec_err: err = f"{err if err else ''} Recession Bands Error: {rec_err}"
-        st.session_state[data_key] = df if not df.empty else None
-        st.session_state[error_key] = err
-
+        st.session_state[data_key] = df if not df.empty else None; st.session_state[error_key] = err
 def plot_single_fred(data_df, show_recession_value, _, __, ___, ____): 
     series_id = st.session_state.fred_series_id_calculated 
     series_data_col = data_df.get(series_id) if data_df is not None and series_id in data_df.columns else None
     recession_series = data_df.get(config.USREC_SERIES_ID) if data_df is not None and show_recession_value else None
     return plotters.create_fred_plot(series_data_col, series_id, st.session_state.fred_series_info, recession_series, show_recession_value)
-
 def display_single_fred_metrics(data_df, _):
     if st.session_state.fred_series_info is not None and not st.session_state.fred_series_info.empty:
         info = st.session_state.fred_series_info
         st.caption(f"Title: {info.get('title', 'N/A')}. Last Updated: {info.get('last_updated', 'N/A')}. Units: {info.get('units_short', 'N/A')}. Frequency: {info.get('frequency_short', 'N/A')}.")
-        notes = info.get('notes', '')
+        notes = info.get('notes', ''); 
         if notes and isinstance(notes, str): st.expander("Series Notes").caption(notes)
     elif st.session_state.fred_info_error: st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
-
-# Use the key from `sections` for `title_for_tab` and a descriptive string for `header_text`
 if config.fred: fred_section_ui("fred_single", "FRED Single Series", "🏛️ FRED Economic Data Viewer", "Fetches and displays a single time series from FRED.", fetch_single_fred_logic, plot_single_fred, display_single_fred_metrics, config.fred_series_options, "fred_series_name_input", config.FRED_SERIES_EXAMPLES)
 else: st.markdown(f"<a name='{sections['FRED Single Series']}'></a>", unsafe_allow_html=True); st.divider(); st.header("🏛️ FRED Economic Data Viewer"); st.error(config.fred_error_message)
 
-
 # --- Section 4: Fed's Jaws Chart ---
-key_feds_jaws = "Fed's Jaws" # Define the key to avoid f-string issue
-anchor_id_feds_jaws = sections[key_feds_jaws]
-st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True) # Anchor
-st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates") # Keep descriptive header
+key_feds_jaws = "Fed's Jaws"; anchor_id_feds_jaws = sections[key_feds_jaws]
+st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True) 
+st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates") 
 st.write(f"Visualizes key Federal Reserve interest rates over the last **{config.FED_JAWS_DURATION_DAYS} days**.")
 plot_placeholder_jaws = st.empty()
 if config.fred:
     st.checkbox("Show NBER Recession Bands", value=st.session_state.fed_jaws_show_recession, key="fed_jaws_show_recession")
     if st.button("Fetch/Refresh Fed's Jaws Data", key="jaws_button", type="primary"):
-        st.session_state.fed_jaws_calculated = True; end_j = datetime.now(); start_j = end_j - timedelta(days=config.FED_JAWS_DURATION_DAYS) # Used timedelta
+        st.session_state.fed_jaws_calculated = True; end_j = datetime.now(); start_j = end_j - timedelta(days=config.FED_JAWS_DURATION_DAYS) 
         with st.spinner(f"Fetching Fed's Jaws data..."):
             st.session_state.fed_jaws_data, st.session_state.fed_jaws_error = data_fetchers.get_multiple_fred_data(config.fred, list(config.FED_JAWS_SERIES_IDS), start_j, end_j, include_recession_bands=st.session_state.fed_jaws_show_recession)
             if st.session_state.fed_jaws_error: plot_placeholder_jaws.warning(f"Jaws Data Warning: {st.session_state.fed_jaws_error}")
@@ -260,10 +290,7 @@ if config.fred:
                 st.download_button("Download Jaws Data (CSV)", utils.convert_df_to_csv(st.session_state.fed_jaws_data), "fed_jaws_data.csv", "text/csv", key="dl_jaws_csv")
         elif st.session_state.fed_jaws_error and st.session_state.fed_jaws_calculated: pass 
         else: st.info(f"Click 'Fetch/Refresh' for Fed's Jaws chart.")
-else: 
-    st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True) # Use defined anchor_id
-    st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates") # Keep descriptive header
-    st.error(config.fred_error_message)
+else: st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True); st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates"); st.error(config.fred_error_message)
 
 # --- Section 5: Fed Funds Rate vs Core PCE ---
 def fetch_ffr_pce_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, *_):
@@ -284,7 +311,6 @@ def display_ffr_pce_metrics(data_df, _):
             st.caption(f"Threshold: {config.FFR_PCE_THRESHOLD}%. Current diff is {'above' if diff > config.FFR_PCE_THRESHOLD else 'at or below'} threshold.")
         else: st.caption("N/A (No overlapping data for metric).")
     else: st.caption("N/A (Data missing for metric).")
-
 if config.fred: fred_section_ui("ffr_pce", "FFR vs Core PCE", "💰 Fed Funds Rate vs. Core PCE Inflation", f"Visualizes FFR vs Core PCE YoY. Gap colored if FFR - PCE YoY > {config.FFR_PCE_THRESHOLD}%.", fetch_ffr_pce_logic, plot_ffr_pce, display_ffr_pce_metrics)
 else: st.markdown(f"<a name='{sections['FFR vs Core PCE']}'></a>", unsafe_allow_html=True); st.divider(); st.header("💰 Fed Funds Rate vs. Core PCE Inflation"); st.error(config.fred_error_message)
 
@@ -292,8 +318,7 @@ else: st.markdown(f"<a name='{sections['FFR vs Core PCE']}'></a>", unsafe_allow_
 def fetch_gold_ry_logic(start_date_key, end_date_key, show_recession_key, data_key, error_key, section_key_suffix, *_): 
     s_start, s_end, show_rec = st.session_state[start_date_key], st.session_state[end_date_key], st.session_state[show_recession_key]
     combined_data = pd.DataFrame()
-    current_error = None
-    gold_ticker = config.GOLD_YFINANCE_TICKER
+    current_error = None; gold_ticker = config.GOLD_YFINANCE_TICKER
     yfinance_gold_col_name = f"{gold_ticker}_Close" 
     st.session_state['yfinance_gold_col_name_plotter'] = yfinance_gold_col_name 
     try:
@@ -317,7 +342,6 @@ def fetch_gold_ry_logic(start_date_key, end_date_key, show_recession_key, data_k
         else: st.session_state[data_key] = None; current_error = (current_error or "") + "Combined data index was empty."
     else: st.session_state[data_key] = None; current_error = (current_error or "") + "No data fetched for Gold vs Real Yield."
     st.session_state[error_key] = current_error.strip() if current_error else None
-
 def plot_gold_ry(data_df, show_recession_value, _, __, ___, yfinance_gold_col_name_for_plotter): 
     recession_series = data_df.get(config.USREC_SERIES_ID) if data_df is not None and show_recession_value else None
     actual_gold_col_name = yfinance_gold_col_name_for_plotter if yfinance_gold_col_name_for_plotter else config.GOLD_YFINANCE_TICKER + "_Close" 
@@ -332,13 +356,12 @@ def display_gold_ry_metrics(data_df, _):
         c1.metric(f"Latest {config.GOLD_YFINANCE_TICKER} Price", f"${latest_g:,.2f}" if isinstance(latest_g, (float,int)) else latest_g)
         c2.metric("Latest 10Y Real Yield", f"{latest_ry:.2f}%" if isinstance(latest_ry, (float,int)) else latest_ry)
     else: st.caption("N/A (Data missing for metric).")
-
 if config.fred: fred_section_ui("gold_ry", "Gold vs Real Yield", "🪙 Gold vs. 10Y Real Yield", f"Plots Gold Price ({config.GOLD_YFINANCE_TICKER} from yfinance) against the 10-Year Treasury Inflation-Indexed Security yield (FRED).", fetch_gold_ry_logic, plot_gold_ry, display_gold_ry_metrics)
 else: st.markdown(f"<a name='{sections['Gold vs Real Yield']}'></a>", unsafe_allow_html=True); st.divider(); st.header("🪙 Gold vs. 10Y Real Yield"); st.error(config.fred_error_message)
 
 # --- Ticker Reference Table & Footer ---
 ticker_ref_anchor_id = sections["Ticker Reference"]
-st.markdown(f"<a name='{ticker_ref_anchor_id}'></a>", unsafe_allow_html=True) # Anchor
+st.markdown(f"<a name='{ticker_ref_anchor_id}'></a>", unsafe_allow_html=True) 
 st.divider()
 with st.expander("Show Example Ticker Symbols (Yahoo Finance)"): 
     st.dataframe(config.ticker_df, use_container_width=True, hide_index=True, column_config={"Asset Class": st.column_config.TextColumn("Asset Class"), "Description": st.column_config.TextColumn("Description"), "Yahoo Ticker": st.column_config.TextColumn("Yahoo Ticker")})

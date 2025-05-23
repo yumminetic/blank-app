@@ -19,9 +19,10 @@ FFR_PCE_THRESHOLD = 2.0
 
 # --- Default Ticker Symbols ---
 DEFAULT_TICKER_1_CORR = 'EURUSD=X'
-DEFAULT_TICKER_2_CORR = 'GLD' # GLD is also our yfinance gold ticker
+DEFAULT_TICKER_2_CORR = 'GLD' 
 DEFAULT_TICKER_SKEW = 'AAPL'
 DEFAULT_FRED_SERIES_NAME = "Effective Federal Funds Rate (Daily)"
+DEFAULT_INDEX_VALUATION_TICKER = "^GSPC" # Default for S&P 500
 
 # --- FRED API Key Configuration & Client Initialization ---
 FRED_API_KEY = None
@@ -57,6 +58,17 @@ ticker_examples = {
     "US Treasury Yields": {"10 Year (^TNX)": "^TNX", "5 Year (^FVX)": "^FVX", "30 Year (^TYX)": "^TYX"},
     "Example Stocks":{"Apple (US)": "AAPL", "Microsoft (US)": "MSFT", "Google (US)": "GOOGL", "DBS Group (SG)": "D05.SI", "Tesla (US)": "TSLA"}
 }
+# Add major indices also to the ticker_examples for easy reference if needed elsewhere
+INDEX_EXAMPLES_FOR_VALUATION = {
+    "S&P 500": "^GSPC",
+    "Nasdaq Composite": "^IXIC",
+    "Dow Jones Industrial Average": "^DJI",
+    "Russell 2000": "^RUT",
+    "FTSE 100 (UK)": "^FTSE",
+    "DAX (Germany)": "^GDAXI",
+    "Nikkei 225 (Japan)": "^N225"
+}
+
 ticker_data_list = []
 for category, tickers_in_category in ticker_examples.items():
     for name, symbol in tickers_in_category.items():
@@ -73,7 +85,6 @@ FRED_SERIES_EXAMPLES = {
     "Initial Claims (Weekly)": "ICSA", "10-Year Treasury Constant Maturity Rate (Daily)": "DGS10",
     "M1 Money Stock (Weekly)": "WM1NS", "M2 Money Stock (Weekly)": "WM2NS",
     "Industrial Production Index (Monthly)": "INDPRO", "Retail Sales - Total (Monthly)": "RSAFS",
-    # "Gold Price (London Bullion, Daily)": "GOLDAMGBD228NLBM", # Replaced by yfinance
     "VIX (Volatility Index, Daily)": "VIXCLS",
     "Effective Federal Funds Rate (Monthly Avg)": "FEDFUNDS",
     "10-Year Treasury Inflation-Indexed Security (Daily)": "DFII10", 
@@ -88,18 +99,10 @@ FED_JAWS_SERIES_IDS = ['DFEDTARU', 'IORB', 'DPCREDIT', 'SOFR', 'DFF', 'OBFR', 'D
 FFR_VS_PCE_SERIES_IDS = {"ffr": "FEDFUNDS", "core_pce_index": "PCEPILFE"}
 FFR_VS_PCE_NAMES = {"ffr": "Effective Federal Funds Rate (Monthly)", "core_pce_index": "Core PCE Price Index (Monthly)", "core_pce_yoy_calculated": "Core PCE Inflation YoY (Calculated)"}
 
-# Gold vs. Real Yield: Gold from yfinance, Real Yield from FRED
-GOLD_YFINANCE_TICKER = "GLD" # Using SPDR Gold Shares ETF
-GOLD_VS_REAL_YIELD_SERIES_IDS = {
-    "gold_yfinance": GOLD_YFINANCE_TICKER, # Key for yfinance gold
-    "real_yield_10y": "DFII10" # FRED series for 10Y Real Yield
-}
-GOLD_VS_REAL_YIELD_NAMES = {
-    "gold_yfinance": f"Gold Price ({GOLD_YFINANCE_TICKER} from yfinance)", 
-    "real_yield_10y": "10-Year Treasury Inflation-Indexed Security (Daily, FRED)"
-}
+GOLD_YFINANCE_TICKER = "GLD" 
+GOLD_VS_REAL_YIELD_SERIES_IDS = {"gold_yfinance": GOLD_YFINANCE_TICKER, "real_yield_10y": "DFII10"}
+GOLD_VS_REAL_YIELD_NAMES = {"gold_yfinance": f"Gold Price ({GOLD_YFINANCE_TICKER} from yfinance)", "real_yield_10y": "10-Year Treasury Inflation-Indexed Security (Daily, FRED)"}
 
-# Default date range for FRED charts (e.g., last 20 years)
 DEFAULT_FRED_START_DATE = datetime.now() - timedelta(days=20*365)
 DEFAULT_FRED_END_DATE = datetime.now()
 
@@ -107,3 +110,4 @@ DEFAULT_FRED_END_DATE = datetime.now()
 LINKEDIN_URL = "https://www.linkedin.com/in/kennethquah/"
 YOUR_NAME = "Kenneth Quah"
 LINKEDIN_SVG = """<svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="#0077B5" style="vertical-align: middle;"><title>LinkedIn</title><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>"""
+

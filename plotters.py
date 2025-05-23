@@ -171,14 +171,14 @@ def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yi
         xaxis_title='Date', 
         height=600,
         yaxis=dict(
-            title=dict( 
+            title=dict( # Corrected structure
                 text=config.GOLD_VS_REAL_YIELD_NAMES.get("gold_yfinance"),
                 font=dict(color="gold") 
             ),
             tickfont=dict(color="gold") 
         ),
         yaxis2=dict(
-            title=dict( 
+            title=dict( # Corrected structure
                 text=config.GOLD_VS_REAL_YIELD_NAMES.get("real_yield_10y"),
                 font=dict(color="green") 
             ),

@@ -72,6 +72,24 @@ utils.init_state('gold_ry_data', None); utils.init_state('gold_ry_error', None)
 utils.init_state('yfinance_gold_col_name_plotter', None) 
 utils.init_state('gold_ry_show_recession', True)   
 
+# --- Helper Functions (Defined before use) ---
+def date_input_cols(start_date_key, end_date_key, section_key_suffix):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.session_state[start_date_key] = st.date_input("Start Date", value=st.session_state[start_date_key], key=f"date_widget_start_{section_key_suffix}")
+    with col2:
+        st.session_state[end_date_key] = st.date_input("End Date", value=st.session_state[end_date_key], key=f"date_widget_end_{section_key_suffix}")
+    return st.session_state[start_date_key], st.session_state[end_date_key]
+
+def display_single_fred_metrics(data_df, _): # Moved definition earlier
+    if st.session_state.fred_series_info is not None and not st.session_state.fred_series_info.empty:
+        info = st.session_state.fred_series_info
+        st.caption(f"Title: {info.get('title', 'N/A')}. Last Updated: {info.get('last_updated', 'N/A')}. Units: {info.get('units_short', 'N/A')}. Frequency: {info.get('frequency_short', 'N/A')}.")
+        notes = info.get('notes', '')
+        if notes and isinstance(notes, str): st.expander("Series Notes").caption(notes)
+    elif st.session_state.fred_info_error: st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
+
+
 # --- Global Controls ---
 st.sidebar.header("Global Controls")
 st.session_state.global_start_date = st.sidebar.date_input(
@@ -294,10 +312,11 @@ if config.fred:
                     st.download_button("Download FRED Series Data (CSV)", utils.convert_df_to_csv(st.session_state.fred_single_data), f"fred_{st.session_state.fred_series_id_calculated}.csv", "text/csv", key="dl_fred_single_csv_global")
             elif st.session_state.fred_series_id_calculated: st.info("No data for selected FRED series in the given range.")
     with caption_placeholder_fs.container():
-        # Corrected condition here:
-        if st.session_state.dashboard_calculated_once and st.session_state.fred_series_info is not None and not st.session_state.fred_series_info.empty:
+        if st.session_state.dashboard_calculated_once and \
+           st.session_state.fred_series_info is not None and \
+           not st.session_state.fred_series_info.empty: # Corrected condition
             display_single_fred_metrics(None, None) 
-        elif st.session_state.dashboard_calculated_once and st.session_state.fred_info_error: # If there was an error fetching info
+        elif st.session_state.dashboard_calculated_once and st.session_state.fred_info_error: 
             st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
 
 else: st.markdown(f"<a name='{fred_single_anchor_id}'></a>", unsafe_allow_html=True); st.divider(); st.header("🏛️ FRED Economic Data Viewer"); st.error(config.fred_error_message)
@@ -342,8 +361,6 @@ if config.fred:
             else: st.info("No FFR vs PCE data to display after refresh.")
     with metric_placeholder_ffr_pce.container():
         if st.session_state.dashboard_calculated_once and st.session_state.current_ffr_pce_diff is not None:
-            # The display_ffr_pce_metrics function was removed in the global refresh refactor.
-            # We'll display the metric directly here.
             if isinstance(st.session_state.current_ffr_pce_diff, (float, int, np.number)):
                 st.metric(f"Latest Difference (FFR - Core PCE YoY Calc.)", f"{st.session_state.current_ffr_pce_diff:.2f}%", delta_color=("inverse" if st.session_state.current_ffr_pce_diff < config.FFR_PCE_THRESHOLD else "normal"))
                 st.caption(f"Threshold: {config.FFR_PCE_THRESHOLD}%. Current difference is {'above' if st.session_state.current_ffr_pce_diff > config.FFR_PCE_THRESHOLD else 'at or below'} threshold.")
@@ -370,7 +387,6 @@ if config.fred:
             else: st.info("No Gold vs Real Yield data to display after refresh.")
     with metric_placeholder_gold_ry.container():
         if st.session_state.dashboard_calculated_once and st.session_state.gold_ry_data is not None:
-            # The display_gold_ry_metrics function was removed. Display directly.
             data_df_gry = st.session_state.gold_ry_data
             gold_col_name_gry = st.session_state.get('yfinance_gold_col_name_plotter', config.GOLD_YFINANCE_TICKER + "_Close")
             ry_id_gry = config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]

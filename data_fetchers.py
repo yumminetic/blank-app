@@ -104,7 +104,7 @@ def get_multiple_fred_data(_fred_instance, series_ids, start_date=None, end_date
         return combined_df, f"Partial success. Errors: {errors}" if errors else None
     except Exception as e: return None, f"Error combining/filling FRED data: {e}"
 
-@st.cache_data(show_spinner=True) # Show spinner for this yfinance call
+@st.cache_data(show_spinner=True) 
 def get_index_valuation_ratios(ticker_symbol):
     """Fetches current valuation ratios for a given index ticker using yfinance .info."""
     if not ticker_symbol:
@@ -114,8 +114,7 @@ def get_index_valuation_ratios(ticker_symbol):
         ticker = yf.Ticker(ticker_symbol)
         info = ticker.info
         
-        # Check if info was successfully fetched
-        if not info or info.get('regularMarketPrice') is None: # A basic check if info is populated
+        if not info or info.get('regularMarketPrice') is None: 
              return None, f"Could not retrieve detailed info for {ticker_symbol}. It might be an invalid ticker or data is temporarily unavailable."
 
         ratios = {
@@ -126,7 +125,6 @@ def get_index_valuation_ratios(ticker_symbol):
             "Price/Book": info.get('priceToBook'),
             "Dividend Yield": info.get('dividendYield')
         }
-        # Convert dividend yield to percentage string if it exists
         if ratios["Dividend Yield"] is not None:
             ratios["Dividend Yield"] = f"{ratios['Dividend Yield'] * 100:.2f}%"
             

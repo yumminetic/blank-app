@@ -146,11 +146,6 @@ def create_ffr_pce_comparison_plot(data_df, ffr_series_id, pce_index_series_id, 
 def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yield_col_name, recession_data_series=None, show_recession_bands=False): 
     fig = go.Figure(); plot_title = "Gold Price vs. 10-Year Real Yield"
     
-    # print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received yfinance_gold_col_name = '{yfinance_gold_col_name}'")
-    # print(f"PLOTTER DEBUG: create_gold_vs_real_yield_plot received fred_real_yield_col_name = '{fred_real_yield_col_name}'")
-    # if data_df is not None: print(f"PLOTTER DEBUG: data_df columns received by plotter: {list(data_df.columns)}")
-    # else: print("PLOTTER DEBUG: data_df is None when received by plotter.")
-
     if data_df is None or data_df.empty:
         fig.update_layout(title=plot_title, annotations=[dict(text="No data for Gold vs Real Yield plot.", showarrow=False, align='center')]); return fig
     
@@ -176,18 +171,18 @@ def create_gold_vs_real_yield_plot(data_df, yfinance_gold_col_name, fred_real_yi
         xaxis_title='Date', 
         height=600,
         yaxis=dict(
-            title=dict(
+            title=dict( 
                 text=config.GOLD_VS_REAL_YIELD_NAMES.get("gold_yfinance"),
-                font=dict(color="gold") # Font styling for the title
+                font=dict(color="gold") 
             ),
-            tickfont=dict(color="gold") # Font styling for tick labels
+            tickfont=dict(color="gold") 
         ),
         yaxis2=dict(
-            title=dict(
+            title=dict( 
                 text=config.GOLD_VS_REAL_YIELD_NAMES.get("real_yield_10y"),
-                font=dict(color="green") # Font styling for the title
+                font=dict(color="green") 
             ),
-            tickfont=dict(color="green"), # Font styling for tick labels
+            tickfont=dict(color="green"), 
             overlaying="y", 
             side="right"
         ),

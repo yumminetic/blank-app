@@ -10,7 +10,7 @@ import config, data_fetchers, plotters, utils
 st.set_page_config(page_title="Macro/Quantamental Dashboard", layout="wide")
 st.markdown("<h1 style='text-align: center; color: white;'>📊 Macro/Quantamental Dashboard</h1>", unsafe_allow_html=True) 
 
-# --- Tab Navigation (remains the same) ---
+# --- Tab Navigation ---
 sections = {
     "Correlation Calculator": "correlation_calculator",
     "IV Skew Viewer": "iv_skew_viewer",
@@ -30,9 +30,9 @@ st.markdown("<hr style='margin-bottom: 30px;'/>", unsafe_allow_html=True)
 
 
 # --- Initialize Session State (and Global Controls) ---
-utils.init_state('global_start_date', date.today() - timedelta(days=10*365)) # Default to last 10 years
+utils.init_state('global_start_date', date.today() - timedelta(days=10*365)) 
 utils.init_state('global_end_date', date.today())
-utils.init_state('dashboard_calculated_once', False) # Flag to see if main button was ever pressed
+utils.init_state('dashboard_calculated_once', False) 
 
 # Correlation
 utils.init_state('rolling_corr_data', None); utils.init_state('rolling_corr_error', None) 
@@ -82,7 +82,7 @@ st.session_state.global_start_date = st.sidebar.date_input(
 st.session_state.global_end_date = st.sidebar.date_input(
     "Global End Date", 
     value=st.session_state.global_end_date, 
-    min_value=st.session_state.global_start_date, # Ensure end date is after start date
+    min_value=st.session_state.global_start_date, 
     key="global_end_date_widget"
 )
 
@@ -131,7 +131,7 @@ if st.sidebar.button("🚀 Calculate & Refresh All Dashboard Data", type="primar
     # Fed Jaws (uses its own duration, but refresh triggered globally)
     if config.fred:
         with st.spinner("Fetching Fed's Jaws data..."):
-            end_j = datetime.combine(st.session_state.global_end_date, datetime.min.time()) # Use global end date
+            end_j = datetime.combine(st.session_state.global_end_date, datetime.min.time()) 
             start_j = end_j - timedelta(days=config.FED_JAWS_DURATION_DAYS)
             st.session_state.fed_jaws_data, st.session_state.fed_jaws_error = data_fetchers.get_multiple_fred_data(
                 config.fred, list(config.FED_JAWS_SERIES_IDS), start_j, end_j, 
@@ -146,7 +146,6 @@ if st.sidebar.button("🚀 Calculate & Refresh All Dashboard Data", type="primar
                 config.fred, s_ids_ffr, st.session_state.global_start_date, st.session_state.global_end_date, 
                 include_recession_bands=st.session_state.ffr_pce_show_recession
             )
-            # Calculate current difference
             if st.session_state.ffr_pce_data is not None and not st.session_state.ffr_pce_data.empty:
                 tdf_ffr = st.session_state.ffr_pce_data.copy(); tdf_ffr.sort_index(inplace=True)
                 ffr_col, pce_idx_col = config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_index"]
@@ -189,15 +188,14 @@ if st.sidebar.button("🚀 Calculate & Refresh All Dashboard Data", type="primar
 
 
 # --- Section 1: Rolling Correlation ---
-# ... (Display logic remains similar, but no individual fetch button) ...
 correlation_anchor_id = sections["Correlation Calculator"]
 st.markdown(f"<a name='{correlation_anchor_id}'></a>", unsafe_allow_html=True) 
 st.header("📊 Rolling Correlation Calculator")
 st.write("Uses daily returns. Adjust tickers and window, then click 'Refresh Dashboard Data' in the sidebar.")
 st.slider("Select Rolling Window (Days):", min_value=config.MIN_ROLLING_WINDOW_CORR, max_value=config.MAX_ROLLING_WINDOW_CORR, value=st.session_state.rolling_window_corr, step=1, key="rolling_window_corr")
 col1_corr, col2_corr = st.columns(2)
-with col1_corr: st.session_state.ticker1_input_corr = st.text_input("Ticker 1:", value=st.session_state.ticker1_input_corr, key="ticker1_corr_widget").strip().upper()
-with col2_corr: st.session_state.ticker2_input_corr = st.text_input("Ticker 2:", value=st.session_state.ticker2_input_corr, key="ticker2_corr_widget").strip().upper()
+with col1_corr: st.session_state.ticker1_input_corr = st.text_input("Ticker 1:", value=st.session_state.ticker1_input_corr, key="ticker1_corr_widget_global").strip().upper() 
+with col2_corr: st.session_state.ticker2_input_corr = st.text_input("Ticker 2:", value=st.session_state.ticker2_input_corr, key="ticker2_corr_widget_global").strip().upper() 
 plot_placeholder_corr = st.empty()
 with plot_placeholder_corr.container():
     if st.session_state.dashboard_calculated_once:
@@ -210,19 +208,17 @@ with plot_placeholder_corr.container():
             if df_to_download_corr is not None and not df_to_download_corr.empty:
                 csv_corr = utils.convert_df_to_csv(df_to_download_corr) 
                 st.download_button(label="Download Correlation Data (CSV)", data=csv_corr, file_name=f"corr_{st.session_state.ticker1_calculated_corr}_{st.session_state.ticker2_calculated_corr}_{st.session_state.corr_window_calculated}d.csv", mime='text/csv', key="download_corr_csv_global")
-        elif st.session_state.ticker1_calculated_corr: # Attempted but no data and no specific error
+        elif st.session_state.ticker1_calculated_corr: 
              st.info("No correlation data to display for the selected tickers/window after refresh.")
     else: st.info("Configure tickers/window and click 'Refresh Dashboard Data' in the sidebar.")
 
-
 # --- Section 2: Implied Volatility Skew ---
-# ... (Display logic similar, no individual fetch button) ...
 iv_skew_anchor_id = sections["IV Skew Viewer"]
 st.markdown(f"<a name='{iv_skew_anchor_id}'></a>", unsafe_allow_html=True) 
 st.divider(); st.header("📉 Implied Volatility Skew Viewer")
 st.write("Visualizes IV smile/skew. Zero IVs are interpolated. Configure ticker/expiry, then click 'Refresh Dashboard Data' in sidebar.")
 st.session_state.ticker_input_skew = st.text_input("Equity/ETF Ticker:", value=st.session_state.ticker_input_skew, key="ticker_skew_widget_global").strip().upper()
-expirations_g, err_exp_g = data_fetchers.get_expiration_dates(st.session_state.ticker_input_skew) # Use _g for global context
+expirations_g, err_exp_g = data_fetchers.get_expiration_dates(st.session_state.ticker_input_skew) 
 sel_exp_g = None
 if err_exp_g: st.warning(err_exp_g)
 if expirations_g:
@@ -230,7 +226,6 @@ if expirations_g:
         today_g = pd.Timestamp.now().normalize(); future_dates_g = pd.to_datetime(expirations_g)[pd.to_datetime(expirations_g) >= today_g]
         def_idx_g = np.abs((future_dates_g - (today_g + pd.Timedelta(days=90))).total_seconds()).argmin() if not future_dates_g.empty else (len(expirations_g) -1 if expirations_g else 0)
         curr_idx_g = expirations_g.index(st.session_state.expiry_calculated_skew) if st.session_state.ticker_input_skew == st.session_state.ticker_calculated_skew and st.session_state.expiry_calculated_skew in expirations_g else def_idx_g
-        # Store selected expiry directly in session state for the global refresh to pick up
         st.session_state.expiry_input_skew = st.selectbox("Select Expiration Date:", expirations_g, index=curr_idx_g, key="expiry_select_widget_skew_global")
         sel_exp_g = st.session_state.expiry_input_skew 
     except Exception as e: st.session_state.expiry_input_skew = st.selectbox("Select Expiration Date (fallback):", expirations_g, key="expiry_select_fb_skew_global") if expirations_g else None; sel_exp_g = st.session_state.expiry_input_skew
@@ -242,18 +237,15 @@ with plot_placeholder_skew.container():
         elif st.session_state.ticker_calculated_skew and (st.session_state.calls_data_skew is not None or st.session_state.puts_data_skew is not None):
             fig_skew = plotters.create_iv_skew_plot(st.session_state.calls_data_skew, st.session_state.puts_data_skew, st.session_state.ticker_calculated_skew, st.session_state.expiry_calculated_skew, st.session_state.price_skew)
             st.plotly_chart(fig_skew, use_container_width=True)
-            # Download buttons
             if st.session_state.calls_data_skew is not None and not st.session_state.calls_data_skew.empty:
                 st.download_button(label="Download Calls Data (CSV)", data=utils.convert_df_to_csv(st.session_state.calls_data_skew), file_name=f"calls_{st.session_state.ticker_calculated_skew}_{st.session_state.expiry_calculated_skew}.csv", mime='text/csv', key="download_calls_csv_global")
             if st.session_state.puts_data_skew is not None and not st.session_state.puts_data_skew.empty:
                 st.download_button(label="Download Puts Data (CSV)", data=utils.convert_df_to_csv(st.session_state.puts_data_skew), file_name=f"puts_{st.session_state.ticker_calculated_skew}_{st.session_state.expiry_calculated_skew}.csv", mime='text/csv', key="download_puts_csv_global")
-        elif st.session_state.ticker_calculated_skew: # Attempted but no data
+        elif st.session_state.ticker_calculated_skew: 
              st.info("No IV skew data to display for the selected ticker/expiry after refresh.")
     else: st.info("Configure ticker/expiry and click 'Refresh Dashboard Data' in the sidebar.")
 
-
 # --- Section: Index Valuation Ratios ---
-# ... (Display logic similar, no individual fetch button) ...
 index_val_anchor_id = sections["Index Valuation"]
 st.markdown(f"<a name='{index_val_anchor_id}'></a>", unsafe_allow_html=True)
 st.divider(); st.header("밸류에이션 Index Valuation Ratios") 
@@ -274,15 +266,10 @@ with valuation_placeholder.container():
                 st.metric(label="Forward P/E", value=f"{data_val.get('Forward P/E'):.2f}" if isinstance(data_val.get('Forward P/E'), (float, int)) else "N/A")
                 st.metric(label="Dividend Yield", value=data_val.get('Dividend Yield', "N/A"))
             if data_val:
-                st.download_button(label=f"Download Valuation Data (CSV)", data=utils.convert_df_to_csv(pd.DataFrame([data_val])), file_name=f"valuation_{st.session_state.index_valuation_calculated_ticker}.csv", mime='text/csv', key=f"dl_val_{st.session_state.index_valuation_calculated_ticker}_csv")
+                st.download_button(label=f"Download Valuation Data (CSV)", data=utils.convert_df_to_csv(pd.DataFrame([data_val])), file_name=f"valuation_{st.session_state.index_valuation_calculated_ticker}.csv", mime='text/csv', key=f"dl_val_{st.session_state.index_valuation_calculated_ticker}_csv_global")
         elif st.session_state.index_valuation_calculated_ticker:
             st.info("No valuation data to display after refresh.")
     else: st.info("Configure index ticker and click 'Refresh Dashboard Data' in the sidebar.")
-
-
-# --- FRED Sections (Single, FFR vs PCE, Gold vs RY, Fed Jaws) ---
-# These will now use global date pickers and refresh via the global button.
-# The structure will be: Anchor, Header, Controls (like recession toggle or series select), Display Area
 
 # --- Section: FRED Single Series ---
 fred_single_anchor_id = sections["FRED Single Series"]
@@ -293,7 +280,7 @@ if config.fred:
     try: idx_fs = config.fred_series_options.index(st.session_state.fred_series_name_input)
     except ValueError: idx_fs = 0; st.session_state.fred_series_name_input = config.fred_series_options[0]
     st.session_state.fred_series_name_input = st.selectbox("Select FRED Series:", options=config.fred_series_options, index=idx_fs, key="fred_series_select_widget_global")
-    st.checkbox("Show NBER Recession Bands", value=st.session_state.fred_single_show_recession, key="fred_single_show_recession")
+    st.checkbox("Show NBER Recession Bands", value=st.session_state.fred_single_show_recession, key="fred_single_show_recession_global") 
     
     plot_placeholder_fs = st.empty(); caption_placeholder_fs = st.empty()
     with plot_placeholder_fs.container():
@@ -304,15 +291,18 @@ if config.fred:
                 fig_fs = plotters.create_fred_plot(st.session_state.fred_single_data.get(st.session_state.fred_series_id_calculated), st.session_state.fred_series_id_calculated, st.session_state.fred_series_info, recession_data_fs, st.session_state.fred_single_show_recession)
                 st.plotly_chart(fig_fs, use_container_width=True)
                 if st.session_state.fred_single_data is not None and not st.session_state.fred_single_data.empty:
-                    st.download_button("Download FRED Series Data (CSV)", utils.convert_df_to_csv(st.session_state.fred_single_data), f"fred_{st.session_state.fred_series_id_calculated}.csv", "text/csv", key="dl_fred_single_csv")
+                    st.download_button("Download FRED Series Data (CSV)", utils.convert_df_to_csv(st.session_state.fred_single_data), f"fred_{st.session_state.fred_series_id_calculated}.csv", "text/csv", key="dl_fred_single_csv_global")
             elif st.session_state.fred_series_id_calculated: st.info("No data for selected FRED series in the given range.")
     with caption_placeholder_fs.container():
-        if st.session_state.dashboard_calculated_once and st.session_state.fred_series_info: display_single_fred_metrics(None, None) # Metrics are from session_state.fred_series_info
+        # Corrected condition here:
+        if st.session_state.dashboard_calculated_once and st.session_state.fred_series_info is not None and not st.session_state.fred_series_info.empty:
+            display_single_fred_metrics(None, None) 
+        elif st.session_state.dashboard_calculated_once and st.session_state.fred_info_error: # If there was an error fetching info
+            st.caption(f"Metadata Error: {st.session_state.fred_info_error}")
+
 else: st.markdown(f"<a name='{fred_single_anchor_id}'></a>", unsafe_allow_html=True); st.divider(); st.header("🏛️ FRED Economic Data Viewer"); st.error(config.fred_error_message)
 
-
 # --- Section: Fed's Jaws Chart ---
-# ... (Similar display logic, uses its own date calculation but triggered by global refresh) ...
 key_feds_jaws = "Fed's Jaws"; anchor_id_feds_jaws = sections[key_feds_jaws]
 st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True) 
 st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates") 
@@ -330,9 +320,7 @@ if config.fred:
                 if st.session_state.fed_jaws_data is not None and not st.session_state.fed_jaws_data.empty:
                     st.download_button("Download Jaws Data (CSV)", utils.convert_df_to_csv(st.session_state.fed_jaws_data), "fed_jaws_data.csv", "text/csv", key="dl_jaws_csv_global")
             else: st.info("No Fed Jaws data to display after refresh.")
-    # No initial info message here as it's part of global refresh
 else: st.markdown(f"<a name='{anchor_id_feds_jaws}'></a>", unsafe_allow_html=True); st.divider(); st.header("🦅 Fed's Jaws: Key Policy Rates"); st.error(config.fred_error_message)
-
 
 # --- Section: FFR vs Core PCE ---
 ffr_pce_anchor_id = sections["FFR vs Core PCE"]
@@ -350,13 +338,17 @@ if config.fred:
                 fig_ffr = plotters.create_ffr_pce_comparison_plot(st.session_state.ffr_pce_data, config.FFR_VS_PCE_SERIES_IDS["ffr"], config.FFR_VS_PCE_SERIES_IDS["core_pce_index"], config.FFR_PCE_THRESHOLD, recession_series_ffr, st.session_state.ffr_pce_show_recession)
                 st.plotly_chart(fig_ffr, use_container_width=True)
                 if st.session_state.ffr_pce_data is not None and not st.session_state.ffr_pce_data.empty:
-                    st.download_button("Download FFR vs PCE Data (CSV)", utils.convert_df_to_csv(st.session_state.ffr_pce_data), "ffr_pce_data.csv", "text/csv", key="dl_ffr_pce_csv")
+                    st.download_button("Download FFR vs PCE Data (CSV)", utils.convert_df_to_csv(st.session_state.ffr_pce_data), "ffr_pce_data.csv", "text/csv", key="dl_ffr_pce_csv_global")
             else: st.info("No FFR vs PCE data to display after refresh.")
     with metric_placeholder_ffr_pce.container():
         if st.session_state.dashboard_calculated_once and st.session_state.current_ffr_pce_diff is not None:
-            display_ffr_pce_metrics(st.session_state.ffr_pce_data, None) # Call the metric display function
+            # The display_ffr_pce_metrics function was removed in the global refresh refactor.
+            # We'll display the metric directly here.
+            if isinstance(st.session_state.current_ffr_pce_diff, (float, int, np.number)):
+                st.metric(f"Latest Difference (FFR - Core PCE YoY Calc.)", f"{st.session_state.current_ffr_pce_diff:.2f}%", delta_color=("inverse" if st.session_state.current_ffr_pce_diff < config.FFR_PCE_THRESHOLD else "normal"))
+                st.caption(f"Threshold: {config.FFR_PCE_THRESHOLD}%. Current difference is {'above' if st.session_state.current_ffr_pce_diff > config.FFR_PCE_THRESHOLD else 'at or below'} threshold.")
+            else: st.caption(f"Latest Difference: {st.session_state.current_ffr_pce_diff}")
 else: st.markdown(f"<a name='{ffr_pce_anchor_id}'></a>", unsafe_allow_html=True); st.divider(); st.header("💰 Fed Funds Rate vs. Core PCE Inflation"); st.error(config.fred_error_message)
-
 
 # --- Section: Gold vs. 10Y Real Yield ---
 gold_ry_anchor_id = sections["Gold vs Real Yield"]
@@ -364,7 +356,7 @@ st.markdown(f"<a name='{gold_ry_anchor_id}'></a>", unsafe_allow_html=True)
 st.divider(); st.header("🪙 Gold vs. 10Y Real Yield")
 st.write(f"Plots Gold Price ({config.GOLD_YFINANCE_TICKER}) vs 10Y Real Yield. Uses global date range.")
 plot_placeholder_gold_ry = st.empty(); metric_placeholder_gold_ry = st.empty()
-if config.fred: # Real yield is from FRED, so check this
+if config.fred: 
     st.checkbox("Show NBER Recession Bands", value=st.session_state.gold_ry_show_recession, key="gold_ry_show_recession_global")
     with plot_placeholder_gold_ry.container():
         if st.session_state.dashboard_calculated_once:
@@ -374,21 +366,26 @@ if config.fred: # Real yield is from FRED, so check this
                 fig_gry = plotters.create_gold_vs_real_yield_plot(st.session_state.gold_ry_data, st.session_state.yfinance_gold_col_name_plotter, config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"], recession_series_gry, st.session_state.gold_ry_show_recession)
                 st.plotly_chart(fig_gry, use_container_width=True)
                 if st.session_state.gold_ry_data is not None and not st.session_state.gold_ry_data.empty:
-                    st.download_button("Download Gold/RY Data (CSV)", utils.convert_df_to_csv(st.session_state.gold_ry_data), "gold_ry_data.csv", "text/csv", key="dl_gold_ry_csv")
+                    st.download_button("Download Gold/RY Data (CSV)", utils.convert_df_to_csv(st.session_state.gold_ry_data), "gold_ry_data.csv", "text/csv", key="dl_gold_ry_csv_global")
             else: st.info("No Gold vs Real Yield data to display after refresh.")
     with metric_placeholder_gold_ry.container():
         if st.session_state.dashboard_calculated_once and st.session_state.gold_ry_data is not None:
-             display_gold_ry_metrics(st.session_state.gold_ry_data, None) # Call the metric display function
+            # The display_gold_ry_metrics function was removed. Display directly.
+            data_df_gry = st.session_state.gold_ry_data
+            gold_col_name_gry = st.session_state.get('yfinance_gold_col_name_plotter', config.GOLD_YFINANCE_TICKER + "_Close")
+            ry_id_gry = config.GOLD_VS_REAL_YIELD_SERIES_IDS["real_yield_10y"]
+            latest_g_gry = data_df_gry[gold_col_name_gry].dropna().iloc[-1] if gold_col_name_gry in data_df_gry.columns and not data_df_gry[gold_col_name_gry].dropna().empty else "N/A"
+            latest_ry_gry = data_df_gry[ry_id_gry].dropna().iloc[-1] if ry_id_gry in data_df_gry.columns and not data_df_gry[ry_id_gry].dropna().empty else "N/A"
+            c1_gry, c2_gry = st.columns(2)
+            c1_gry.metric(f"Latest {config.GOLD_YFINANCE_TICKER} Price", f"${latest_g_gry:,.2f}" if isinstance(latest_g_gry, (float,int)) else latest_g_gry)
+            c2_gry.metric("Latest 10Y Real Yield", f"{latest_ry_gry:.2f}%" if isinstance(latest_ry_gry, (float,int)) else latest_ry_gry)
 else: st.markdown(f"<a name='{gold_ry_anchor_id}'></a>", unsafe_allow_html=True); st.divider(); st.header("🪙 Gold vs. 10Y Real Yield"); st.error(config.fred_error_message)
-
 
 # --- Initial Message if not calculated ---
 if not st.session_state.dashboard_calculated_once:
     st.info("ℹ️ Welcome! Please adjust global date range and other inputs as needed, then click 'Calculate & Refresh All Dashboard Data' in the sidebar to load all charts and data.")
 
-
 # --- Ticker Reference Table & Footer ---
-# ... (remains the same) ...
 ticker_ref_anchor_id = sections["Ticker Reference"]
 st.markdown(f"<a name='{ticker_ref_anchor_id}'></a>", unsafe_allow_html=True) 
 st.divider()
